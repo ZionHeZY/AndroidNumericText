@@ -3,15 +3,25 @@ package tech.hezy.androidnumerictext
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.*
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -33,41 +43,39 @@ fun AnimatedNumberApp() {
     }
 }
 
-@OptIn(ExperimentalAnimationApi::class)
+
 @Composable
-fun AnimatedNumber(
-    number: Int,
-    modifier: Modifier = Modifier
-) {
-    var oldNumber by remember { mutableStateOf(number) }
-    var newNumber by remember { mutableStateOf(number) }
+fun AnimatedNumberDemo() {
+    var number by remember { mutableStateOf(0) }
+    val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(number) {
-        oldNumber = newNumber
-        newNumber = number
-    }
-
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier.fillMaxSize()
     ) {
-        AnimatedContent(
-            targetState = newNumber,
-            transitionSpec = {
-                if (newNumber > oldNumber) {
-                    slideInVertically { it } + fadeIn() with slideOutVertically { -it } + fadeOut()
-                } else {
-                    slideInVertically { -it } + fadeIn() with slideOutVertically { it } + fadeOut()
-                }.using(SizeTransform(clip = false))
-            }, label = ""
-        ) { targetNumber ->
-            Text(
-                text = "$targetNumber",
-                fontSize = 36.sp
-            )
+        AnimatedNumber(number = number, modifier = Modifier.height(45.dp))
+
+        Spacer(modifier = Modifier.height(56.dp))
+
+        Button(onClick = {
+            coroutineScope.launch {
+                number++
+            }
+        }) {
+            Text(text = "Increase")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = {
+            coroutineScope.launch {
+                number--
+            }
+        }) {
+            Text(text = "Decrease")
         }
     }
 }
+
 @Preview(showBackground = true)
 @Composable
 fun DefaultPreview() {
