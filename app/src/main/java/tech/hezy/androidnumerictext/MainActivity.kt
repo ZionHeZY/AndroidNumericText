@@ -14,7 +14,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -46,7 +46,7 @@ fun AnimatedNumberApp() {
 
 @Composable
 fun AnimatedNumberDemo() {
-    var number by remember { mutableStateOf(0) }
+    var number by remember { mutableIntStateOf(0) }
     val coroutineScope = rememberCoroutineScope()
 
     Column(
