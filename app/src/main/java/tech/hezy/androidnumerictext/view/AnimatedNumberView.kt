@@ -15,7 +15,7 @@ class AnimatedNumberView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     private var number: Int = 0
-    private var animatedValue: Float = 0f
+    private var animatedValues: MutableList<Float> = mutableListOf()
     private var direction: Int = 1
     private val paint = Paint().apply {
         textSize = 100f
@@ -36,6 +36,7 @@ class AnimatedNumberView @JvmOverloads constructor(
         for (i in text.indices) {
             val char = text[i]
             val offset = i * paint.measureText("0")
+            val animatedValue = if (i < animatedValues.size) animatedValues[i] else 0f
             canvas.drawText(char.toString(), x + offset, y - animatedValue * height * direction, paint)
         }
 
@@ -44,6 +45,7 @@ class AnimatedNumberView @JvmOverloads constructor(
         for (i in nextText.indices) {
             val char = nextText[i]
             val offset = i * paint.measureText("0")
+            val animatedValue = if (i < animatedValues.size) animatedValues[i] else 0f
             canvas.drawText(char.toString(), x + offset, y + (1 - animatedValue) * height * direction, paint)
         }
     }
@@ -59,22 +61,32 @@ class AnimatedNumberView @JvmOverloads constructor(
     }
 
     private fun animateNumberChange() {
-        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 500
-            interpolator = AccelerateDecelerateInterpolator()
-            addUpdateListener { animation ->
-                this@AnimatedNumberView.animatedValue = animation.animatedValue as Float
-                invalidate()
+        val text = number.toString()
+        animatedValues = MutableList(text.length) { 0f }
+        val animators = text.indices.map { index ->
+            ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 500
+                startDelay = index * 100L
+                interpolator = AccelerateDecelerateInterpolator()
+                addUpdateListener { animation ->
+                    animatedValues[index] = animation.animatedValue as Float
+                    invalidate()
+                }
             }
-            start()
         }
 
-        animator.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                number += direction
-                animatedValue = 0f
-                invalidate()
-            }
-        })
+        animators.forEach { animator ->
+            animator.start()
+            animator.addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (animator == animators.last()) {
+                        number += direction
+                        animatedValues = mutableListOf()
+                        invalidate()
+                    }
+                }
+            })
+        }
     }
 }
+
