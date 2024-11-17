@@ -3,7 +3,7 @@ package tech.hezy.androidnumerictext
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
-import tech.hezy.androidnumerictext.view.AnimatedNumberView
+import tech.hezy.numerictext.AnimatedNumberView
 
 class SampleActivity : AppCompatActivity() {
     
@@ -14,14 +14,14 @@ class SampleActivity : AppCompatActivity() {
         setContentView(R.layout.layout_sample_activity)
         
         val animatedNumberView = findViewById<AnimatedNumberView>(R.id.animatedNumberView)
-
+        
         animatedNumberView.setNumber(currentNumber)
-
+        
         findViewById<View>(R.id.buttonIncrease).setOnClickListener {
             currentNumber += 1
             animatedNumberView.setNumber(currentNumber)
         }
-
+        
         findViewById<View>(R.id.buttonDecrease).setOnClickListener {
             currentNumber -= 1
             animatedNumberView.setNumber(currentNumber)
