@@ -15,61 +15,91 @@ class AnimatedNumberView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    private var currentNumber = 0
-    private var targetNumber = 0
-    private var animationProgress = 1f
+    private data class Digit(
+        val oldValue: Char,
+        val newValue: Char,
+        var progress: Float = 0f,
+        var animator: ValueAnimator? = null
+    )
+
+    private val digits = mutableListOf<Digit>()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         textSize = 40f
     }
     private val textBounds = Rect()
+    private var digitWidth = 0f
 
-    private var animator: ValueAnimator? = null
+    init {
+        paint.getTextBounds("0", 0, 1, textBounds)
+        digitWidth = paint.measureText("0")
+    }
 
     fun setNumber(number: Int) {
-        if (number == targetNumber) return
-        
-        animator?.cancel()
-        
-        currentNumber = targetNumber
-        targetNumber = number
-        
-        animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = NumericTextTransition.ANIMATION_DURATION
-            interpolator = NumericTextTransition.SnappyInterpolator
-            
-            addUpdateListener { animation ->
-                animationProgress = animation.animatedValue as Float
-                invalidate()
+        val newText = number.toString()
+        val oldText = if (digits.isEmpty()) {
+            "0".padStart(newText.length, '0')
+        } else {
+            digits.map { it.newValue }.joinToString("")
+        }
+
+        digits.forEach { it.animator?.cancel() }
+        digits.clear()
+
+        val paddedOldText = oldText.padStart(newText.length, '0')
+        val paddedNewText = newText.padStart(oldText.length, '0')
+
+        paddedOldText.zip(paddedNewText).forEach { (old, new) ->
+            if (old != new) {
+                val digit = Digit(old, new)
+                digit.animator = ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = NumericTextTransition.ANIMATION_DURATION
+                    interpolator = NumericTextTransition.SnappyInterpolator
+                    addUpdateListener { animation ->
+                        digit.progress = animation.animatedValue as Float
+                        invalidate()
+                    }
+                    start()
+                }
+                digits.add(digit)
+            } else {
+                digits.add(Digit(old, new, 1f))
             }
-            
-            start()
         }
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         
-        val centerX = width / 2f
+        if (digits.isEmpty()) return
+
         val centerY = height / 2f
-
-        val currentText = currentNumber.toString()
-        val targetText = targetNumber.toString()
-
-        paint.getTextBounds(currentText, 0, currentText.length, textBounds)
+        paint.getTextBounds("0", 0, 1, textBounds)
         val textHeight = textBounds.height()
 
-        canvas.save()
-        canvas.translate(centerX, centerY + (textHeight * (1f - animationProgress)))
-        paint.alpha = ((1f - animationProgress) * 255).toInt()
-        canvas.drawText(currentText, 0f, 0f, paint)
-        canvas.restore()
+        val totalWidth = digitWidth * digits.size
+        var startX = (width - totalWidth) / 2f + digitWidth / 2f
 
-        canvas.save()
-        canvas.translate(centerX, centerY + (textHeight * (2f - animationProgress)))
-        paint.alpha = (animationProgress * 255).toInt()
-        canvas.drawText(targetText, 0f, 0f, paint)
-        canvas.restore()
+        digits.forEach { digit ->
+            canvas.save()
+            canvas.translate(startX, centerY + (textHeight * (1f - digit.progress)))
+            paint.alpha = ((1f - digit.progress) * 255).toInt()
+            canvas.drawText(digit.oldValue.toString(), 0f, 0f, paint)
+            canvas.restore()
+
+            canvas.save()
+            canvas.translate(startX, centerY + (textHeight * (2f - digit.progress)))
+            paint.alpha = (digit.progress * 255).toInt()
+            canvas.drawText(digit.newValue.toString(), 0f, 0f, paint)
+            canvas.restore()
+
+            startX += digitWidth
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        digits.forEach { it.animator?.cancel() }
     }
 }
 
