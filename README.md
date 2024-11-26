@@ -30,14 +30,16 @@ dependencies {
 ### Add the Control in Layout File
 
 ```xml
-<com.zionhezy.androidnumerictext.NumericEditText
-    android:id="@+id/numericEditText"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    app:maxValue="1000"
-    app:minValue="0"
-    app:decimalPlaces="2"
-    app:format="currency" />
+<tech.hezy.numerictext.AnimatedNumberView
+        android:id="@+id/animatedNumberView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:textSize="40sp"
+        app:textColor="@color/black"
+        app:layout_constraintBottom_toTopOf="@id/buttonIncrease"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 ```
 
 ### Configure in Code
