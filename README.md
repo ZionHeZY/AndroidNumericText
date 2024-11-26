@@ -13,17 +13,6 @@
 - **Simple and Easy-to-Use API**: Convenient for quick integration into projects.
 - **Custom Styles and Themes**: Meet different UI design requirements.
 - **iOS 17 SwiftUI contentTransition(.numericText()).
-## Installation
-
-### Gradle
-
-Add the following dependency in your project's `build.gradle` file:
-
-```gradle
-dependencies {
-    implementation 'com.zionhezy:androidnumerictext:1.0.0'
-}
-```
 
 ## Usage
 
@@ -44,12 +33,9 @@ dependencies {
 
 ### Configure in Code
 
-```java
-NumericEditText numericEditText = findViewById(R.id.numericEditText);
-numericEditText.setMaxValue(1000);
-numericEditText.setMinValue(0);
-numericEditText.setDecimalPlaces(2);
-numericEditText.setFormat(NumericEditText.Format.CURRENCY);
+```kotlin
+val animatedNumberView = findViewById<AnimatedNumberView>(R.id.animatedNumberView)
+        animatedNumberView.setNumber(currentNumber)
 ```
 
 ## Contribution Guidelines
