@@ -15,7 +15,11 @@
 - **iOS 17 SwiftUI contentTransition(.numericText()).
 
 ## Usage
+Compose:
 
+```kotlin
+AnimatedNumber(number = number, modifier = Modifier.height(45.dp))
+```
 ### Add the Control in Layout File
 
 ```xml
