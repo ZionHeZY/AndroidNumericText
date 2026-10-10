@@ -1,0 +1,43 @@
+name: Android
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build, lint and publish local artifact
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :numeric-text:lintRelease :numeric-text:publishReleasePublicationToVerificationRepository
+      - name: Compile independent artifact consumer
+        run: ./scripts/verify-consumer.sh
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            result="$(adb shell am instrument -w tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke)"; printf '%s\n' "$result"; echo "$result" | grep -q '^PASS:'
