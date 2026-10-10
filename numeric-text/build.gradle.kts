@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.github.ZionHeZY"
-version = providers.gradleProperty("version").orElse("v1.1.0").get()
+version = providers.gradleProperty("version").orElse("v1.2.0").get()
 
 android {
     namespace = "tech.hezy.numerictext"

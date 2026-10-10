@@ -4,7 +4,7 @@ A small Kotlin integer-animation component for Android Views and Jetpack Compose
 
 This began as an older Android UI experiment. The 1.1.0 refresh turns both implementations into a reusable library, replaces the demo UI, and corrects the original README: **this is an animated integer display, not a numeric input or formatting SDK**.
 
-> Animation refinement below is **unreleased**. The published `v1.1.0` artifact still contains the earlier animation; build this checkout to preview the new motion.
+> **v1.2.0** includes the SwiftUI-calibrated animation and the real iOS/Android comparison below. Earlier `v1.1.0` artifacts retain the previous motion.
 
 ## Demo
 
@@ -39,7 +39,7 @@ dependencyResolutionManagement {
 Then add one library dependency in your app module:
 
 ```kotlin
-implementation("com.github.ZionHeZY:AndroidNumericText:v1.1.0")
+implementation("com.github.ZionHeZY:AndroidNumericText:v1.2.0")
 ```
 
 The library supports Android **API 21+**; the demo requires API 26+. Both APIs are in the same AAR. Compose dependencies are included transitively, so this is not a Compose-free View-only artifact. To use the composable, enable Compose and configure a Kotlin-compatible Compose compiler in your host project.
@@ -109,7 +109,7 @@ Custom font resources can be loaded by your host app and assigned as a `Typeface
 | Placement | Standard View layout and padding | Standard `Modifier` |
 | Timing | `animationDurationMillis` / XML `animationDuration` | `animationDurationMillis` |
 
-The unreleased renderer uses a **500 ms per-character base duration**, a no-bounce spring curve, and left-to-right staggering. Staggering can add up to 48% to the complete transition. Changed digits travel a fraction of the font size and simultaneously scale, blur and fade, rather than rolling a full line height. Blur is real raster blur on API 21+, not an opacity-only substitute. Persistent minus signs and unchanged digits stay sharp; signs fade without rolling.
+The v1.2.0 renderer uses a **500 ms per-character base duration**, a no-bounce spring curve, and left-to-right staggering. Staggering can add up to 48% to the complete transition. Changed digits travel a fraction of the font size and simultaneously scale, blur and fade, rather than rolling a full line height. Blur is real raster blur on API 21+, not an opacity-only substitute. Persistent minus signs and unchanged digits stay sharp; signs fade without rolling.
 
 Set duration to **0** for immediate updates. Negative durations and invalid View font sizes are rejected. Increasing values move upward; decreasing values move downward. The initial number appears immediately. Width changes interpolate instead of reserving the maximum width and snapping afterward; no leading zeroes are inserted.
 
@@ -149,7 +149,7 @@ Use JDK 17 and Android SDK 35. The wrapper uses Gradle 8.9; the project uses AGP
 The consumer script builds a separate app from published Maven metadata, not a project dependency. It exercises customized Compose and View usage without adding a separate Compose BOM. To verify the public coordinate:
 
 ```sh
-./scripts/verify-consumer.sh https://jitpack.io v1.1.0
+./scripts/verify-consumer.sh https://jitpack.io v1.2.0
 ```
 
 With an emulator attached, install both debug APKs and run the behavioral smoke checks:
@@ -161,7 +161,15 @@ adb shell am instrument -w \
   tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke
 ```
 
-Require a `PASS:` result; Android instrumentation can return a zero process exit code even on failure. Checks cover signed integer rendering, rollover measurement, rapid updates, custom typography and alpha, unchanged leading-digit pixels during a carry, disabled animation, visibility/detachment, recreation and demo cancellation. The unreleased refinement was exercised locally on API 34 with animations enabled and disabled. CI is configured for an independent consumer build and emulator checks on API 26 and 35.
+Require a `PASS:` result; Android instrumentation can return a zero process exit code even on failure. Checks cover signed integer rendering, rollover measurement, rapid updates, custom typography and alpha, unchanged leading-digit pixels during a carry, disabled animation, visibility/detachment, recreation and demo cancellation. The v1.2.0 refinement was exercised locally on API 34 with animations enabled and disabled. CI is configured for an independent consumer build and emulator checks on API 26 and 35.
+
+## 1.2.0 changes
+
+- Approximate native SwiftUI numeric motion with per-character spring timing, scale, real blur, fade and animated width.
+- Keep unchanged digits and persistent minus signs sharp; respect system-disabled animation.
+- Correct View baseline alignment and interpolate cached blur levels without per-frame raster generation.
+- Simplify both demo layouts and add compressed, actual iOS/Compose/View comparison recordings.
+- Preserve the existing signed-integer APIs and document remaining fidelity and performance limits.
 
 ## 1.1.0 changes
 
