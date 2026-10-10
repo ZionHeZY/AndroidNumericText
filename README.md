@@ -4,11 +4,13 @@ A small Kotlin integer-animation component for Android Views and Jetpack Compose
 
 This began as an older Android UI experiment. The 1.1.0 refresh turns both implementations into a reusable library, replaces the demo UI, and corrects the original README: **this is an animated integer display, not a numeric input or formatting SDK**.
 
+> Animation refinement below is **unreleased**. The published `v1.1.0` artifact still contains the earlier animation; build this checkout to preview the new motion.
+
 ## Demo
 
 <table><tr><th>Jetpack Compose</th><th>Android Views</th></tr><tr><td><img src="demo-compose.gif" width="320" alt="Compose integer animation through carries, zero and negative numbers"></td><td><img src="demo-views.gif" width="320" alt="View digit animation through carries, zero and negative numbers"></td></tr></table>
 
-Recorded from the actual demo app, cropped and palette-compressed at 320 px / 12 fps. Both GIFs together are approximately **149 KiB**, down from approximately **1,042 KiB** for the original recordings. No autoplay video or external image service is required.
+Recorded from the actual demo app, cropped and palette-compressed at 320 px / 20 fps with 32 colors. Both GIFs together are approximately **397 KiB**, down from approximately **1,067 KiB** for the original recordings. No autoplay video or external image service is required.
 
 ## Install
 
@@ -91,17 +93,37 @@ Custom font resources can be loaded by your host app and assigned as a `Typeface
 
 | Capability | Android View | Compose |
 |---|---|---|
-| Animation | Changed digit slots roll; unchanged digits stay still | The complete integer rolls and fades |
+| Animation | Per-character short roll, blur and fade; unchanged characters remain sharp | Per-character short roll, blur and fade; unchanged characters remain sharp |
 | Typography | `Typeface`, `setTextSize`, `textSizePixels` | Full `TextStyle` |
 | Color | ARGB, including transparency | `Color`, including transparency |
 | Placement | Standard View layout and padding | Standard `Modifier` |
 | Timing | `animationDurationMillis` / XML `animationDuration` | `animationDurationMillis` |
 
-Both use a 200 ms default duration. Set duration to **0** for immediate updates. Negative durations and invalid View font sizes are rejected. Increasing values move upward; decreasing values move downward. The initial number appears immediately. Rapid changes converge to the latest target; the View settles the preceding target before starting the next transition rather than queueing updates.
+The unreleased renderer uses a **500 ms per-character base duration**, a no-bounce spring curve, and left-to-right staggering. Staggering can add up to 48% to the complete transition. Changed digits travel a fraction of the font size and simultaneously scale, blur and fade, rather than rolling a full line height. Blur is real raster blur on API 21+, not an opacity-only substitute. Persistent minus signs and unchanged digits stay sharp; signs fade without rolling.
 
-The View reserves enough width during digit-count changes and shrinks after the transition, without inserting leading zeroes. It cancels animation when hidden or detached. System animation settings are respected; disabling animations does not leave stale digits. Accessibility exposes the latest complete integer, not separate animated fragments.
+Set duration to **0** for immediate updates. Negative durations and invalid View font sizes are rejected. Increasing values move upward; decreasing values move downward. The initial number appears immediately. Width changes interpolate instead of reserving the maximum width and snapping afterward; no leading zeroes are inserted.
+
+The View cancels animation when hidden or detached. System animation settings are respected; disabling animations does not leave stale digits. Accessibility exposes the latest complete integer, not separate animated fragments.
+
+On interrupted updates, Compose preserves the currently presented glyph layers; the View settles the preceding target before starting the next transition. The View's interruption behavior is therefore not identical to SwiftUI.
+
+### SwiftUI reference and fidelity
+
+Motion was compared with an actual iOS 18 SwiftUI `Text` using `.contentTransition(.numericText(value:))` and `.smooth(duration: 0.5)`, including carries, shrinking values and negative signs. A second native reference uses the same Droid Sans Mono font as Android to separate font differences from animation differences.
+
+Same-font early carry frames were fitted as a blend of translated, scaled and Gaussian-blurred glyphs: normalized travel approximately `0.42 em`, scale `0.4 + 0.6 × opacity`, Gaussian blur approximately `0.12 em × (1 − opacity)`, and adjacent-character phase offset approximately 117 ms for a 500 ms base transition. The no-bounce curve uses a fitted normalized coefficient of 10.6. These are measured approximations from this reference, not public SwiftUI constants or a claim of zero pixel error.
+
+The implementation reproduces those observed character, blur, phase and width behaviors. It does **not** promise byte-identical frames: CoreText and Android rasterization differ, Apple's internal spring/blur parameters are not public, and the normalized travel/blur settings are visual fits rather than Apple constants. Android does not bundle Apple's SF font.
 
 **Scope:** signed `Int` values, including `Int.MIN_VALUE` and `Int.MAX_VALUE`, rendered as ASCII integer text. No decimals, currency, grouping separators, editable input, or minimum/maximum input validation. Apply domain validation in your own state layer. Very large text or integers need sufficient parent width, or a horizontally scrollable container as demonstrated by the app.
+
+### Performance boundaries
+
+The View reuses one animator and cached alpha-mask blur rasters. Compose caches glyph rasters with an 8 MiB / 24-entry LRU limit and avoids animation-driven remeasurement when text width is unchanged. Active transitions can retain evicted glyphs, so the LRU limit is not a total memory cap.
+
+This is **not a claim of optimal performance**. Compose still rasterizes new values and generates missing blur variants on the UI thread; gradient/shadow styles use a more expensive software Gaussian blur path. Large fonts, many simultaneous components and frequent interruptions need workload-specific profiling.
+
+API 34 emulator Debug profiling of the native comparison sequence reported 30.95% janky frames for View and 34.34% for Compose in an initial run. A later Compose run after the equal-width optimization reported 7/301 janky frames (2.33%), sampled UI work at approximately 1.95 ms p95, and a 70 ms UI outlier. Substantial buffer/GPU waiting and run-to-run variability prevent attributing that difference solely to the code change. These are whole-demo observations, not isolated component benchmarks, release-build measurements or real-device guarantees.
 
 ## Build and verify
 
@@ -129,7 +151,7 @@ adb shell am instrument -w \
   tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke
 ```
 
-Require a `PASS:` result; Android instrumentation can return a zero process exit code even on failure. Checks cover signed integer rendering, rollover measurement, rapid updates, custom typography and alpha, disabled animation, visibility/detachment, recreation and demo cancellation. CI also runs an independent consumer build and emulator checks on API 26 and 35.
+Require a `PASS:` result; Android instrumentation can return a zero process exit code even on failure. Checks cover signed integer rendering, rollover measurement, rapid updates, custom typography and alpha, unchanged leading-digit pixels during a carry, disabled animation, visibility/detachment, recreation and demo cancellation. The unreleased refinement was exercised locally on API 34 with animations enabled and disabled. CI is configured for an independent consumer build and emulator checks on API 26 and 35.
 
 ## 1.1.0 changes
 
