@@ -8,7 +8,7 @@ This began as an older Android UI experiment. The 1.1.0 refresh turns both imple
 
 <table><tr><th>Jetpack Compose</th><th>Android Views</th></tr><tr><td><img src="demo-compose.gif" width="320" alt="Compose integer animation through carries, zero and negative numbers"></td><td><img src="demo-views.gif" width="320" alt="View digit animation through carries, zero and negative numbers"></td></tr></table>
 
-Recorded from the actual demo app, cropped and palette-compressed at 320 px / 12 fps. Both GIFs together are approximately **147 KiB**, down from approximately **1,042 KiB** for the original recordings. No autoplay video or external image service is required.
+Recorded from the actual demo app, cropped and palette-compressed at 320 px / 12 fps. Both GIFs together are approximately **149 KiB**, down from approximately **1,042 KiB** for the original recordings. No autoplay video or external image service is required.
 
 ## Install
 
@@ -27,7 +27,7 @@ dependencyResolutionManagement {
 Then add one library dependency in your app module:
 
 ```kotlin
-implementation("com.github.ZionHeZY.AndroidNumericText:numeric-text:v1.1.0")
+implementation("com.github.ZionHeZY:AndroidNumericText:v1.1.0")
 ```
 
 The library supports Android **API 21+**; the demo requires API 26+. Both APIs are in the same AAR. Compose dependencies are included transitively, so this is not a Compose-free View-only artifact. To use the composable, enable Compose and configure a Kotlin-compatible Compose compiler in your host project.

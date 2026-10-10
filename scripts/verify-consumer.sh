@@ -16,7 +16,7 @@ dependencyResolutionManagement {
         mavenCentral()
         maven {
             url = uri(providers.gradleProperty("numericRepository").get())
-            content { includeGroup("com.github.ZionHeZY.AndroidNumericText") }
+            content { includeGroup("com.github.ZionHeZY") }
         }
     }
 }
@@ -45,7 +45,7 @@ android {
 }
 dependencies {
     // Component addition: no project dependency, local AAR or manual Compose BOM.
-    implementation("com.github.ZionHeZY.AndroidNumericText:numeric-text:${providers.gradleProperty("numericVersion").get()}")
+    implementation("com.github.ZionHeZY:AndroidNumericText:${providers.gradleProperty("numericVersion").get()}")
     implementation("androidx.activity:activity-compose:1.8.2")
 }
 GRADLE

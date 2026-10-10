@@ -4,7 +4,7 @@ plugins {
     `maven-publish`
 }
 
-group = "com.github.ZionHeZY.AndroidNumericText"
+group = "com.github.ZionHeZY"
 version = providers.gradleProperty("version").orElse("v1.1.0").get()
 
 android {
@@ -43,7 +43,7 @@ publishing {
 afterEvaluate {
     publishing.publications.register<MavenPublication>("release") {
         from(components["release"])
-        artifactId = "numeric-text"
+        artifactId = "AndroidNumericText"
         pom {
             name.set("AndroidNumericText")
             description.set("Animated integer text for Android Views and Jetpack Compose.")

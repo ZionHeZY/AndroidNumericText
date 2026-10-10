@@ -53,7 +53,7 @@ class NumericSmoke : Instrumentation() {
                 removeMonitor(monitor)
                 await("View rotation retains value") { hasText("1") }
                 activate(targetContext.getString(R.string.run_demo))
-                await("View replay starts") { hasText("8") }
+                await("View replay starts") { hasText(targetContext.getString(R.string.stop_demo)) }
                 activate(targetContext.getString(R.string.increase_description))
                 val stopped = onMain { checkNotNull(screen).findViewById<AnimatedNumberView>(R.id.animatedNumberView).number }
                 SystemClock.sleep(850)
