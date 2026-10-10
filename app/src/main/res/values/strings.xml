@@ -1,3 +1,19 @@
 <resources>
-    <string name="app_name">AndroidNumericText</string>
+    <string name="app_name">Numeric text</string>
+    <string name="demo_title">Numeric text</string>
+    <string name="demo_description">Animated integers for Compose and Views.</string>
+    <string name="compose_mode">Jetpack Compose</string>
+    <string name="views_mode">Android Views</string>
+    <string name="open_views">Views demo</string>
+    <string name="open_compose">Compose demo</string>
+    <string name="open_views_description">Open Views demo</string>
+    <string name="open_compose_description">Open Compose demo</string>
+    <string name="increase">+1</string>
+    <string name="decrease">-1</string>
+    <string name="increase_description">Increase by one</string>
+    <string name="decrease_description">Decrease by one</string>
+    <string name="reset">Reset</string>
+    <string name="run_demo">Run demo</string>
+    <string name="stop_demo">Stop demo</string>
+    <string name="replay_description">Watch digit carries, zero, and negative numbers.</string>
 </resources>
