@@ -4,7 +4,7 @@ import android.os.Handler
 import android.os.Looper
 
 internal const val DEMO_NUMBER_KEY = "demo_number"
-internal const val DEMO_ANIMATION_MILLIS = 240
+internal const val DEMO_ANIMATION_MILLIS = 500
 
 internal class DemoReplay(
     private val onNumber: (Int) -> Unit,
@@ -31,7 +31,7 @@ internal class DemoReplay(
             return
         }
         onNumber(numbers[step++])
-        handler.postDelayed(this, 650L)
+        handler.postDelayed(this, 900L)
     }
 
     private companion object {

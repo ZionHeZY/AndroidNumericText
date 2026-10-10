@@ -28,7 +28,27 @@ class NumericSmoke : Instrumentation() {
         val result = Bundle()
         var code = Activity.RESULT_CANCELED
         try {
-            if (showcase != null) {
+            if (showcase?.contains("-reference") == true) {
+                val mode = checkNotNull(showcase)
+                screen = launch(if (mode.startsWith("views")) SampleActivity::class.java else MainActivity::class.java, 129)
+                waitForIdleSync()
+                awaitValue("129")
+                SystemClock.sleep(1200)
+                val values = intArrayOf(130, 139, 140, 99, 100, 98, 0, -1, -10, 42)
+                val started = SystemClock.uptimeMillis()
+                for (index in values.indices) {
+                    val value = values[index]
+                    SystemClock.sleep((started + index * 1200L - SystemClock.uptimeMillis()).coerceAtLeast(0))
+                    runOnMainSync {
+                        val activity = checkNotNull(screen)
+                        if (activity is SampleActivity) activity.findViewById<AnimatedNumberView>(R.id.animatedNumberView).setNumber(value)
+                        else callActivityOnNewIntent(activity, Intent(targetContext, MainActivity::class.java).putExtra("demo_number", value))
+                    }
+                }
+                SystemClock.sleep((started + values.size * 1200L - SystemClock.uptimeMillis()).coerceAtLeast(0))
+                capture("$mode-final")
+                result.putString("stream", "PASS: $mode native comparison sequence reaches 42\n")
+            } else if (showcase != null) {
                 val mode = checkNotNull(showcase)
                 screen = launch(if (mode == "views") SampleActivity::class.java else MainActivity::class.java)
                 waitForIdleSync()
@@ -36,7 +56,7 @@ class NumericSmoke : Instrumentation() {
                 capture("$mode-idle")
                 activate(targetContext.getString(R.string.run_demo))
                 await("Replay start") { hasText("8") }
-                SystemClock.sleep(6600)
+                SystemClock.sleep(9600)
                 await("Replay end") { hasText("42") && hasText(targetContext.getString(R.string.run_demo)) }
                 capture("$mode-final")
                 result.putString("stream", "PASS: $mode showcase replay reaches 42\n")
@@ -56,10 +76,11 @@ class NumericSmoke : Instrumentation() {
                 await("View replay starts") { hasText(targetContext.getString(R.string.stop_demo)) }
                 activate(targetContext.getString(R.string.increase_description))
                 val stopped = onMain { checkNotNull(screen).findViewById<AnimatedNumberView>(R.id.animatedNumberView).number }
-                SystemClock.sleep(850)
+                SystemClock.sleep(1150)
                 check(onMain { checkNotNull(screen).findViewById<AnimatedNumberView>(R.id.animatedNumberView).number } == stopped) { "Manual input did not cancel View replay" }
                 runOnMainSync { checkNotNull(screen).finish() }
                 screen = launch(MainActivity::class.java, 8)
+                if (android.animation.ValueAnimator.areAnimatorsEnabled()) verifyComposeCarry(checkNotNull(screen))
                 activate(targetContext.getString(R.string.increase_description))
                 await("Compose increment") { hasText("9") }
                 activate(targetContext.getString(R.string.increase_description))
@@ -71,7 +92,7 @@ class NumericSmoke : Instrumentation() {
                 activate(targetContext.getString(R.string.run_demo))
                 await("Compose replay start") { hasText("8") }
                 activate(targetContext.getString(R.string.reset))
-                SystemClock.sleep(850)
+                SystemClock.sleep(1150)
                 awaitValue("0")
                 capture("compose-verified")
                 result.putString("stream", "PASS: signed integer rendering, wrap-content shrink/grow, padding, rapid updates, zero duration, hidden/detached settling, View rotation/replay cancellation, Compose increment/decrement/reset/replay cancellation\n")
@@ -85,13 +106,57 @@ class NumericSmoke : Instrumentation() {
         finish(code, result)
     }
 
-    private fun launch(type: Class<out Activity>, number: Int = 0): Activity = startActivitySync(
-        Intent(targetContext, type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("demo_number", number)
-    )
+    private fun verifyComposeCarry(screen: Activity) {
+        fun update(value: Int) = runOnMainSync {
+            callActivityOnNewIntent(screen, Intent(targetContext, MainActivity::class.java).putExtra("demo_number", value))
+        }
+        update(129)
+        awaitValue("129")
+        SystemClock.sleep(850)
+        val bounds = android.graphics.Rect()
+        val numeric = checkNotNull(nodes(uiAutomation.rootInActiveWindow).firstOrNull { it.text?.toString() == "129" })
+        check(numeric.refresh()) { "Numeric accessibility node became stale" }
+        numeric.getBoundsInScreen(bounds)
+        fun render(): Bitmap {
+            val screenshot = checkNotNull(uiAutomation.takeScreenshot())
+            return try {
+                Bitmap.createBitmap(screenshot, bounds.left, bounds.top, bounds.width(), bounds.height())
+            } finally { screenshot.recycle() }
+        }
+        val before = render()
+        update(130)
+        SystemClock.sleep(200)
+        val moving = render()
+        try {
+            check(!before.sameAs(moving)) { "Compose changed digits did not animate" }
+            for (y in 0 until before.height) for (x in 0 until before.width / 3) {
+                val pixel = before.getPixel(x, y)
+                if (android.graphics.Color.red(pixel) < 90 && android.graphics.Color.green(pixel) < 90 &&
+                    android.graphics.Color.blue(pixel) < 90 && android.graphics.Color.alpha(pixel) > 240) {
+                    check(moving.getPixel(x, y) == pixel) {
+                        val directory = File(checkNotNull(targetContext.getExternalFilesDir(null)), "numeric-proof").apply { mkdirs() }
+                        File(directory, "carry-before.png").outputStream().use { before.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        File(directory, "carry-moving.png").outputStream().use { moving.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        "Compose unchanged leading digit changed at ($x,$y): $pixel -> ${moving.getPixel(x, y)}; bounds=$bounds"
+                    }
+                }
+            }
+        } finally { before.recycle(); moving.recycle() }
+        update(8)
+        awaitValue("8")
+    }
+
+    private fun launch(type: Class<out Activity>, number: Int = 0): Activity {
+        val activity = startActivitySync(
+            Intent(targetContext, type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("demo_number", number)
+        )
+        await("Numeric demo window focus") { onMain { activity.window.decorView.hasWindowFocus() } }
+        return activity
+    }
 
     private fun verifyNative(view: AnimatedNumberView) {
         fun expect(value: Int, label: String) {
-            SystemClock.sleep(380)
+            SystemClock.sleep((view.animationDurationMillis.toLong() * 1.5).toLong() + 100)
             waitForIdleSync()
             val images = onMain {
                 val reference = AnimatedNumberView(targetContext).apply {
@@ -114,6 +179,24 @@ class NumericSmoke : Instrumentation() {
             runOnMainSync { view.setNumber(value) }
             expect(value, "Rollover")
         }
+        if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            runOnMainSync { view.setNumber(129) }
+            expect(129, "Carry start")
+            val before = onMain { image(view) }
+            runOnMainSync { view.setNumber(130) }
+            SystemClock.sleep(120)
+            val moving = onMain { image(view) }
+            try {
+                check(!before.sameAs(moving)) { "Changed digits did not animate: shown=${onMain { view.isShown }}, focus=${onMain { view.hasWindowFocus() }}, window=${onMain { view.windowVisibility }}, target=${view.number}" }
+                for (y in 0 until before.height) for (x in 0 until before.width / 3) {
+                    val pixel = before.getPixel(x, y)
+                    if (android.graphics.Color.alpha(pixel) > 240) {
+                        check(moving.getPixel(x, y) == pixel) { "Unchanged leading digit moved or faded" }
+                    }
+                }
+            } finally { before.recycle(); moving.recycle() }
+            expect(130, "Carry end")
+        }
         runOnMainSync { view.setPadding(12, 8, 24, 16); view.setNumber(-10) }
         expect(-10, "Padding")
         runOnMainSync { view.setNumber(9); view.setNumber(100); view.setNumber(-10); view.setNumber(42) }
@@ -131,6 +214,17 @@ class NumericSmoke : Instrumentation() {
             styled.getPixels(pixels, 0, styled.width, 0, 0, styled.width, styled.height)
             check(pixels.maxOf { android.graphics.Color.alpha(it) } == 128) { "Text color alpha was overwritten" }
         } finally { styled.recycle() }
+        if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            runOnMainSync { view.setNumber(-11) }
+            SystemClock.sleep(120)
+            val moving = onMain { image(view) }
+            try {
+                val pixels = IntArray(moving.width * moving.height)
+                moving.getPixels(pixels, 0, moving.width, 0, 0, moving.width, moving.height)
+                check(pixels.all { android.graphics.Color.alpha(it) <= 128 }) { "Blur interpolation exceeded text color alpha" }
+            } finally { moving.recycle() }
+            expect(-11, "Translucent blur transition")
+        }
         capture("views-styled")
         runOnMainSync { view.animationDurationMillis = 0; view.setNumber(-99) }
         expect(-99, "Zero duration")

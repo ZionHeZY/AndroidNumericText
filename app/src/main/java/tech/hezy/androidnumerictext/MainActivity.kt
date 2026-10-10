@@ -6,13 +6,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,9 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -117,51 +113,35 @@ private fun NumericDemo(
     val increaseLabel = stringResource(R.string.increase_description)
     val decreaseLabel = stringResource(R.string.decrease_description)
     val modeLabel = stringResource(R.string.open_views_description)
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(6.dp)
 
     Surface(modifier = Modifier.fillMaxSize(), color = colors.background) {
-        Box(modifier = Modifier.safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
-            Column(
-                modifier = Modifier
-                    .widthIn(max = 560.dp)
-                    .fillMaxWidth()
+        BoxWithConstraints(Modifier.safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
+            Box(
+                Modifier.widthIn(max = 560.dp).fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp, vertical = 32.dp)
+                    .height(maxOf(maxHeight, 480.dp))
+                    .padding(24.dp)
             ) {
-                Text(
-                    stringResource(R.string.demo_title),
-                    modifier = Modifier.semantics { heading() },
-                    style = MaterialTheme.typography.headlineLarge
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    stringResource(R.string.demo_description),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = colors.onSurfaceVariant
-                )
-                Spacer(Modifier.height(20.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        stringResource(R.string.compose_mode),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = colors.onSurfaceVariant
+                        stringResource(R.string.demo_title),
+                        modifier = Modifier.weight(1f).semantics { heading() },
+                        fontSize = 18.sp
                     )
                     TextButton(
                         onClick = onSwitchMode,
-                        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = modeLabel },
-                        shape = shape
+                        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = modeLabel }
                     ) {
-                        Text(stringResource(R.string.open_views))
+                        Text(stringResource(R.string.open_views), color = colors.onSurfaceVariant)
                     }
                 }
-                Spacer(Modifier.height(32.dp))
-                HorizontalDivider(color = colors.outlineVariant)
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 184.dp)
-                        .horizontalScroll(rememberScrollState()),
+                    Modifier.align(Alignment.Center).fillMaxWidth()
+                        .height(184.dp).horizontalScroll(rememberScrollState()),
                     contentAlignment = Alignment.Center
                 ) {
                     AnimatedNumber(
@@ -171,51 +151,39 @@ private fun NumericDemo(
                         animationDurationMillis = DEMO_ANIMATION_MILLIS
                     )
                 }
-                HorizontalDivider(color = colors.outlineVariant)
-                Spacer(Modifier.height(28.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(
-                        onClick = onDecrease,
-                        enabled = number != Int.MIN_VALUE,
-                        modifier = Modifier.weight(1f).heightIn(min = 56.dp).semantics { contentDescription = decreaseLabel },
-                        shape = shape,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
-                        border = BorderStroke(1.dp, colors.outlineVariant)
-                    ) {
-                        Text(stringResource(R.string.decrease), fontSize = 20.sp)
+                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            onClick = onDecrease,
+                            enabled = number != Int.MIN_VALUE,
+                            colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                .semantics { contentDescription = decreaseLabel }
+                        ) {
+                            Text(stringResource(R.string.decrease), fontSize = 20.sp)
+                        }
+                        TextButton(onClick = onReset, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.reset), color = colors.onSurfaceVariant)
+                        }
+                        TextButton(
+                            onClick = onIncrease,
+                            enabled = number != Int.MAX_VALUE,
+                            colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                .semantics { contentDescription = increaseLabel }
+                        ) {
+                            Text(stringResource(R.string.increase), fontSize = 20.sp)
+                        }
                     }
-                    OutlinedButton(
-                        onClick = onIncrease,
-                        enabled = number != Int.MAX_VALUE,
-                        modifier = Modifier.weight(1f).heightIn(min = 56.dp).semantics { contentDescription = increaseLabel },
+                    Button(
+                        onClick = onReplay,
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp).heightIn(min = 56.dp),
                         shape = shape,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
-                        border = BorderStroke(1.dp, colors.outlineVariant)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.onSurface)
                     ) {
-                        Text(stringResource(R.string.increase), fontSize = 20.sp)
+                        Text(stringResource(if (running) R.string.stop_demo else R.string.run_demo))
                     }
                 }
-                TextButton(
-                    onClick = onReset,
-                    modifier = Modifier.align(Alignment.CenterHorizontally).heightIn(min = 48.dp),
-                    shape = shape
-                ) {
-                    Text(stringResource(R.string.reset), color = colors.onSurfaceVariant)
-                }
-                Spacer(Modifier.height(20.dp))
-                Button(
-                    onClick = onReplay,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                    shape = shape
-                ) {
-                    Text(stringResource(if (running) R.string.stop_demo else R.string.run_demo))
-                }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    stringResource(R.string.replay_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant
-                )
             }
         }
     }

@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPOSITORY="${1:-$ROOT/build/repository}"
-VERSION="${2:-v1.1.0}"
+VERSION="${2:-v1.2.0}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/src/main/java/tech/hezy/numericconsumer"

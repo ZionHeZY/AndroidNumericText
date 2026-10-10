@@ -4,7 +4,7 @@
         <!-- 字号建议使用 sp；默认 36sp。 -->
         <attr name="textSize" format="dimension" />
         <attr name="textColor" format="color" />
-        <!-- 动画时长（毫秒），0 为立即更新；默认 200。 -->
+        <!-- 每位动画基础时长（毫秒），0 为立即更新；默认 500。 -->
         <attr name="animationDuration" format="integer" />
     </declare-styleable>
 </resources> 
