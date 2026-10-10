@@ -10,7 +10,17 @@ This began as an older Android UI experiment. The 1.1.0 refresh turns both imple
 
 <table><tr><th>Jetpack Compose</th><th>Android Views</th></tr><tr><td><img src="demo-compose.gif" width="320" alt="Compose integer animation through carries, zero and negative numbers"></td><td><img src="demo-views.gif" width="320" alt="View digit animation through carries, zero and negative numbers"></td></tr></table>
 
-Recorded from the actual demo app, cropped and palette-compressed at 320 px / 20 fps with 32 colors. Both GIFs together are approximately **397 KiB**, down from approximately **1,067 KiB** for the original recordings. No autoplay video or external image service is required.
+Recorded from the actual minimalist demo app: no divider grid or outlined step controls, a number centered in the safe viewport, and actions at the bottom. Cropped to 320 px wide, sampled at 20 fps, compressed to 32 colors, and stripped of duplicate frames while preserving timing. Both GIFs together are approximately **293 KiB**, down from approximately **1,067 KiB** for the original recordings. No external image service is required.
+
+### iOS / Android comparison
+
+<img src="demo-ios-comparison.gif" width="720" alt="Real recordings side by side: iOS SwiftUI, Android Compose, and Android View, from 129 through carries, shrinking values, zero, negatives, and 42">
+
+Actual iOS 18 SwiftUI and Android API 34 recordings—not a simulated iOS animation. All three use **Droid Sans Mono at 88 pt/dp**, a 500 ms base transition, and the same inputs at approximately 1.2-second intervals: `129 → 130 → 139 → 140 → 99 → 100 → 98 → 0 → −1 → −10 → 42`. SwiftUI uses `.contentTransition(.numericText(value:))` with `.smooth(duration: 0.5)`.
+
+The crops stay centered on each platform's safe viewport. Device pixel ratios are normalized, then the combined GIF is reduced to 720 px / 20 fps / 32 colors, approximately **537 KiB**. Only the first transition is aligned in time; there is no per-digit repositioning, per-transition retiming, or speed change. Scheduling and screen-recording jitter remain visible.
+
+The View previously centered text using the font's maximum `top/bottom` extents, which placed it about 5 normalized pixels below the native reference. It now uses line `ascent/descent`; the three steady `129` glyph bounds differ by at most 1 pixel in the 320 px-wide normalized reference crops. View blur now interpolates adjacent cached levels rather than switching abruptly. These corrections improve alignment and continuity, **not a claim of pixel-identical motion**; rendering, spring approximation, and interrupted-update differences remain.
 
 ## Install
 
@@ -113,7 +123,7 @@ Motion was compared with an actual iOS 18 SwiftUI `Text` using `.contentTransiti
 
 Same-font early carry frames were fitted as a blend of translated, scaled and Gaussian-blurred glyphs: normalized travel approximately `0.42 em`, scale `0.4 + 0.6 × opacity`, Gaussian blur approximately `0.12 em × (1 − opacity)`, and adjacent-character phase offset approximately 117 ms for a 500 ms base transition. The no-bounce curve uses a fitted normalized coefficient of 10.6. These are measured approximations from this reference, not public SwiftUI constants or a claim of zero pixel error.
 
-The implementation reproduces those observed character, blur, phase and width behaviors. It does **not** promise byte-identical frames: CoreText and Android rasterization differ, Apple's internal spring/blur parameters are not public, and the normalized travel/blur settings are visual fits rather than Apple constants. Android does not bundle Apple's SF font.
+The implementation approximates those observed character, blur, phase and width behaviors. It does **not** promise byte-identical frames: CoreText and Android rasterization differ, Apple's internal spring/blur parameters are not public, and the normalized travel/blur settings are visual fits rather than Apple constants. Android does not bundle Apple's SF font.
 
 **Scope:** signed `Int` values, including `Int.MIN_VALUE` and `Int.MAX_VALUE`, rendered as ASCII integer text. No decimals, currency, grouping separators, editable input, or minimum/maximum input validation. Apply domain validation in your own state layer. Very large text or integers need sufficient parent width, or a horizontally scrollable container as demonstrated by the app.
 

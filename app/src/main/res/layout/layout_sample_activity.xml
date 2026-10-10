@@ -9,99 +9,75 @@
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:minHeight="480dp"
+        android:padding="24dp">
+
+        <LinearLayout
+            android:id="@+id/demoHeader"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            app:layout_constraintWidth_max="512dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <TextView
+                android:id="@+id/demoTitle"
+                style="@style/Demo.Title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/demo_title" />
+
+            <Button
+                android:id="@+id/buttonSwitchMode"
+                style="@style/Demo.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/open_compose_description"
+                android:text="@string/open_compose" />
+        </LinearLayout>
+
+        <HorizontalScrollView
+            android:layout_width="0dp"
+            android:layout_height="184dp"
+            android:fillViewport="true"
+            android:scrollbars="none"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent">
+
+            <FrameLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent">
+
+                <tech.hezy.numerictext.AnimatedNumberView
+                    android:id="@+id/animatedNumberView"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    app:textSize="88sp"
+                    app:textColor="@color/demo_text"
+                    app:animationDuration="500" />
+            </FrameLayout>
+        </HorizontalScrollView>
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="24dp"
-            android:paddingVertical="32dp"
-            app:layout_constraintWidth_max="560dp"
+            app:layout_constraintWidth_max="512dp"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintVertical_bias="0">
-
-            <TextView
-                android:id="@+id/demoTitle"
-                style="@style/Demo.Title"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/demo_title" />
-
-            <TextView
-                style="@style/Demo.Body"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/demo_description" />
+            app:layout_constraintBottom_toBottomOf="parent">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    style="@style/Demo.Mode"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/views_mode" />
-
-                <Button
-                    android:id="@+id/buttonSwitchMode"
-                    style="@style/Demo.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:contentDescription="@string/open_compose_description"
-                    android:text="@string/open_compose"
-                    android:textColor="@color/demo_accent" />
-            </LinearLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="32dp"
-                android:background="@color/demo_outline"
-                android:importantForAccessibility="no" />
-
-            <HorizontalScrollView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:fillViewport="true"
-                android:scrollbars="none">
-
-                <FrameLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minHeight="184dp"
-                    android:paddingVertical="16dp">
-
-                    <tech.hezy.numerictext.AnimatedNumberView
-                        android:id="@+id/animatedNumberView"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center"
-                        app:textSize="88sp"
-                        app:textColor="@color/demo_text"
-                        app:animationDuration="500" />
-                </FrameLayout>
-            </HorizontalScrollView>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:background="@color/demo_outline"
-                android:importantForAccessibility="no" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="28dp"
                 android:orientation="horizontal">
 
                 <Button
@@ -109,45 +85,35 @@
                     style="@style/Demo.StepButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="6dp"
                     android:layout_weight="1"
                     android:contentDescription="@string/decrease_description"
                     android:text="@string/decrease" />
+
+                <Button
+                    android:id="@+id/buttonReset"
+                    style="@style/Demo.TextButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/reset" />
 
                 <Button
                     android:id="@+id/buttonIncrease"
                     style="@style/Demo.StepButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp"
                     android:layout_weight="1"
                     android:contentDescription="@string/increase_description"
                     android:text="@string/increase" />
             </LinearLayout>
 
             <Button
-                android:id="@+id/buttonReset"
-                style="@style/Demo.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center_horizontal"
-                android:text="@string/reset" />
-
-            <Button
                 android:id="@+id/buttonReplay"
                 style="@style/Demo.PrimaryButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="16dp"
                 android:text="@string/run_demo" />
-
-            <TextView
-                style="@style/Demo.Body"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/replay_description"
-                android:textSize="14sp" />
         </LinearLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>
 </ScrollView>

@@ -32,39 +32,20 @@ class NumericSmoke : Instrumentation() {
                 val mode = checkNotNull(showcase)
                 screen = launch(if (mode.startsWith("views")) SampleActivity::class.java else MainActivity::class.java, 129)
                 waitForIdleSync()
-                SystemClock.sleep(1000)
-                val frames = mode.endsWith("-frames")
-                val directory = File(checkNotNull(targetContext.getExternalFilesDir(null)), "numeric-proof/$mode").apply { mkdirs() }
-                val bitmap = if (frames) Bitmap.createBitmap(540, 260, Bitmap.Config.ARGB_8888) else null
-                val frameCanvas = bitmap?.let(::Canvas)
-                var frameIndex = 0
-                val timestamps = StringBuilder("frame,target,elapsed_ms\n")
-                for (value in intArrayOf(130, 139, 140, 99, 100, 98, 0, -1, -10, 42)) {
+                awaitValue("129")
+                SystemClock.sleep(1200)
+                val values = intArrayOf(130, 139, 140, 99, 100, 98, 0, -1, -10, 42)
+                val started = SystemClock.uptimeMillis()
+                for (index in values.indices) {
+                    val value = values[index]
+                    SystemClock.sleep((started + index * 1200L - SystemClock.uptimeMillis()).coerceAtLeast(0))
                     runOnMainSync {
                         val activity = checkNotNull(screen)
                         if (activity is SampleActivity) activity.findViewById<AnimatedNumberView>(R.id.animatedNumberView).setNumber(value)
                         else callActivityOnNewIntent(activity, Intent(targetContext, MainActivity::class.java).putExtra("demo_number", value))
                     }
-                    val started = SystemClock.uptimeMillis()
-                    if (bitmap == null) SystemClock.sleep(1000) else repeat(15) {
-                        runOnMainSync {
-                            bitmap.eraseColor(android.graphics.Color.WHITE)
-                            val canvas = checkNotNull(frameCanvas)
-                            val saved = canvas.save()
-                            canvas.scale(0.5f, 0.5f)
-                            canvas.translate(0f, -650f)
-                            checkNotNull(screen).window.decorView.draw(canvas)
-                            canvas.restoreToCount(saved)
-                        }
-                        timestamps.append(frameIndex).append(',').append(value).append(',').append(SystemClock.uptimeMillis() - started).append('\n')
-                        File(directory, "%04d.png".format(frameIndex++)).outputStream().use {
-                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
-                        }
-                        SystemClock.sleep(66)
-                    }
                 }
-                bitmap?.recycle()
-                if (frames) File(directory, "timestamps.csv").writeText(timestamps.toString())
+                SystemClock.sleep((started + values.size * 1200L - SystemClock.uptimeMillis()).coerceAtLeast(0))
                 capture("$mode-final")
                 result.putString("stream", "PASS: $mode native comparison sequence reaches 42\n")
             } else if (showcase != null) {
@@ -133,13 +114,14 @@ class NumericSmoke : Instrumentation() {
         awaitValue("129")
         SystemClock.sleep(850)
         val bounds = android.graphics.Rect()
-        checkNotNull(nodes(uiAutomation.rootInActiveWindow).firstOrNull { it.text?.toString() == "129" }).getBoundsInScreen(bounds)
-        fun render(): Bitmap = onMain {
-            Bitmap.createBitmap(bounds.width(), bounds.height(), Bitmap.Config.ARGB_8888).also {
-                val canvas = Canvas(it)
-                canvas.translate(-bounds.left.toFloat(), -bounds.top.toFloat())
-                screen.window.decorView.draw(canvas)
-            }
+        val numeric = checkNotNull(nodes(uiAutomation.rootInActiveWindow).firstOrNull { it.text?.toString() == "129" })
+        check(numeric.refresh()) { "Numeric accessibility node became stale" }
+        numeric.getBoundsInScreen(bounds)
+        fun render(): Bitmap {
+            val screenshot = checkNotNull(uiAutomation.takeScreenshot())
+            return try {
+                Bitmap.createBitmap(screenshot, bounds.left, bounds.top, bounds.width(), bounds.height())
+            } finally { screenshot.recycle() }
         }
         val before = render()
         update(130)
@@ -151,7 +133,12 @@ class NumericSmoke : Instrumentation() {
                 val pixel = before.getPixel(x, y)
                 if (android.graphics.Color.red(pixel) < 90 && android.graphics.Color.green(pixel) < 90 &&
                     android.graphics.Color.blue(pixel) < 90 && android.graphics.Color.alpha(pixel) > 240) {
-                    check(moving.getPixel(x, y) == pixel) { "Compose unchanged leading digit moved or changed rasterization" }
+                    check(moving.getPixel(x, y) == pixel) {
+                        val directory = File(checkNotNull(targetContext.getExternalFilesDir(null)), "numeric-proof").apply { mkdirs() }
+                        File(directory, "carry-before.png").outputStream().use { before.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        File(directory, "carry-moving.png").outputStream().use { moving.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        "Compose unchanged leading digit changed at ($x,$y): $pixel -> ${moving.getPixel(x, y)}; bounds=$bounds"
+                    }
                 }
             }
         } finally { before.recycle(); moving.recycle() }
@@ -159,9 +146,13 @@ class NumericSmoke : Instrumentation() {
         awaitValue("8")
     }
 
-    private fun launch(type: Class<out Activity>, number: Int = 0): Activity = startActivitySync(
-        Intent(targetContext, type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("demo_number", number)
-    )
+    private fun launch(type: Class<out Activity>, number: Int = 0): Activity {
+        val activity = startActivitySync(
+            Intent(targetContext, type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("demo_number", number)
+        )
+        await("Numeric demo window focus") { onMain { activity.window.decorView.hasWindowFocus() } }
+        return activity
+    }
 
     private fun verifyNative(view: AnimatedNumberView) {
         fun expect(value: Int, label: String) {
@@ -196,7 +187,7 @@ class NumericSmoke : Instrumentation() {
             SystemClock.sleep(120)
             val moving = onMain { image(view) }
             try {
-                check(!before.sameAs(moving)) { "Changed digits did not animate" }
+                check(!before.sameAs(moving)) { "Changed digits did not animate: shown=${onMain { view.isShown }}, focus=${onMain { view.hasWindowFocus() }}, window=${onMain { view.windowVisibility }}, target=${view.number}" }
                 for (y in 0 until before.height) for (x in 0 until before.width / 3) {
                     val pixel = before.getPixel(x, y)
                     if (android.graphics.Color.alpha(pixel) > 240) {
@@ -223,6 +214,17 @@ class NumericSmoke : Instrumentation() {
             styled.getPixels(pixels, 0, styled.width, 0, 0, styled.width, styled.height)
             check(pixels.maxOf { android.graphics.Color.alpha(it) } == 128) { "Text color alpha was overwritten" }
         } finally { styled.recycle() }
+        if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            runOnMainSync { view.setNumber(-11) }
+            SystemClock.sleep(120)
+            val moving = onMain { image(view) }
+            try {
+                val pixels = IntArray(moving.width * moving.height)
+                moving.getPixels(pixels, 0, moving.width, 0, 0, moving.width, moving.height)
+                check(pixels.all { android.graphics.Color.alpha(it) <= 128 }) { "Blur interpolation exceeded text color alpha" }
+            } finally { moving.recycle() }
+            expect(-11, "Translucent blur transition")
+        }
         capture("views-styled")
         runOnMainSync { view.animationDurationMillis = 0; view.setNumber(-99) }
         expect(-99, "Zero duration")

@@ -12,22 +12,11 @@
 
     <style name="Demo.Title" parent="">
         <item name="android:textColor">@color/demo_text</item>
-        <item name="android:textSize">36sp</item>
+        <item name="android:textSize">18sp</item>
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:letterSpacing">-0.02</item>
     </style>
 
-    <style name="Demo.Body" parent="">
-        <item name="android:textColor">@color/demo_secondary</item>
-        <item name="android:textSize">16sp</item>
-        <item name="android:lineSpacingExtra">4dp</item>
-    </style>
-
-    <style name="Demo.Mode" parent="">
-        <item name="android:textColor">@color/demo_secondary</item>
-        <item name="android:textSize">14sp</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
-    </style>
 
     <style name="Demo.Button" parent="Widget.AppCompat.Button">
         <item name="android:minWidth">48dp</item>
@@ -42,8 +31,8 @@
         <item name="android:stateListAnimator">@null</item>
     </style>
 
-    <style name="Demo.StepButton" parent="Demo.Button">
-        <item name="android:background">@drawable/demo_button_outline</item>
+    <style name="Demo.StepButton" parent="Demo.TextButton">
+        <item name="android:background">?attr/selectableItemBackground</item>
         <item name="android:textColor">@color/demo_button_text</item>
         <item name="android:textSize">20sp</item>
     </style>

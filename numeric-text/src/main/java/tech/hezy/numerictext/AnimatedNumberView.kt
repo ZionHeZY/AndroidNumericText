@@ -88,7 +88,7 @@ class AnimatedNumberView @JvmOverloads constructor(
                 ceil(lineHeight + 2f * blurPadding).toInt(), Bitmap.Config.ALPHA_8
             )
             rasterPaint.maskFilter = BlurMaskFilter(paint.textSize * 0.2f * level / 8f, BlurMaskFilter.Blur.NORMAL)
-            Canvas(bitmap).drawText(characters, 0, 1, blurPadding + digitWidth / 2f, blurPadding - fontMetrics.top, rasterPaint)
+            Canvas(bitmap).drawText(characters, 0, 1, blurPadding + digitWidth / 2f, blurPadding - fontMetrics.ascent, rasterPaint)
             blurredGlyphs[glyph * 8 + level - 1] = bitmap
         }
     }
@@ -101,16 +101,29 @@ class AnimatedNumberView @JvmOverloads constructor(
             val scale = 0.4f + 0.6f * fade
             canvas.scale(scale, scale, x, baseline + (fontMetrics.ascent + fontMetrics.descent) / 2f)
         }
-        val level = ceil((1f - fade) * 8f).toInt().coerceIn(0, 8)
-        val bitmap = if (level == 0 || character == '-') null else blurredGlyphs[glyphIndex(character) * 8 + level - 1]
+        val blur = ((1f - fade) * 8f).coerceIn(0f, 8f)
+        val lower = blur.toInt()
+        val blend = blur - lower
+        val color = textColor
+        val opacity = android.graphics.Color.alpha(color) / 255f * fade
+        val lowerOpacity = if (character == '-') opacity else opacity * (1f - blend)
+        val bitmap = if (lower == 0 || character == '-') null else blurredGlyphs[glyphIndex(character) * 8 + lower - 1]
         if (bitmap == null) {
-            paint.alpha = (android.graphics.Color.alpha(textColor) * fade).toInt()
+            paint.alpha = (lowerOpacity * 255f).toInt()
             val index = glyphIndex(character)
             canvas.drawText("0123456789-", index, index + 1, x, baseline, paint)
         } else {
-            bitmapPaint.color = textColor
-            bitmapPaint.alpha = (android.graphics.Color.alpha(textColor) * fade).toInt()
-            canvas.drawBitmap(bitmap, x - digitWidth / 2f - blurPadding, baseline + fontMetrics.top - blurPadding, bitmapPaint)
+            bitmapPaint.color = color
+            bitmapPaint.alpha = (lowerOpacity * 255f).toInt()
+            canvas.drawBitmap(bitmap, x - digitWidth / 2f - blurPadding, baseline + fontMetrics.ascent - blurPadding, bitmapPaint)
+        }
+        if (character != '-' && blend > 0f && lower < 8) {
+            val upper = blurredGlyphs[glyphIndex(character) * 8 + lower]
+            if (upper != null) {
+                bitmapPaint.color = color
+                bitmapPaint.alpha = (opacity * blend / (1f - lowerOpacity) * 255f).toInt()
+                canvas.drawBitmap(upper, x - digitWidth / 2f - blurPadding, baseline + fontMetrics.ascent - blurPadding, bitmapPaint)
+            }
         }
         canvas.restoreToCount(saved)
     }
@@ -262,7 +275,7 @@ class AnimatedNumberView @JvmOverloads constructor(
         }
         paint.textAlign = Paint.Align.CENTER
         paint.getFontMetrics(fontMetrics)
-        lineHeight = fontMetrics.bottom - fontMetrics.top
+        lineHeight = fontMetrics.descent - fontMetrics.ascent
     }
 
     private fun settle() {
@@ -287,13 +300,13 @@ class AnimatedNumberView @JvmOverloads constructor(
     }
 
     override fun getBaseline(): Int = (
-        paddingTop + (measuredHeight - paddingTop - paddingBottom - lineHeight) / 2f - fontMetrics.top
+        paddingTop + (measuredHeight - paddingTop - paddingBottom - lineHeight) / 2f - fontMetrics.ascent
     ).toInt()
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val baseColor = paint.color
-        val baseline = paddingTop + (height - paddingTop - paddingBottom - lineHeight) / 2f - fontMetrics.top
+        val baseline = paddingTop + (height - paddingTop - paddingBottom - lineHeight) / 2f - fontMetrics.ascent
         val oldWidth = textWidth(oldCharacters, oldLength)
         val targetWidth = textWidth(targetCharacters, targetLength)
         val time = progress * timelineScale
