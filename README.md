@@ -5,6 +5,8 @@ A small Kotlin integer-animation component for Android Views and Jetpack Compose
 This began as an older Android UI experiment. The 1.1.0 refresh turns both implementations into a reusable library, replaces the demo UI, and corrects the original README: **this is an animated integer display, not a numeric input or formatting SDK**.
 
 > **v1.2.0** includes the SwiftUI-calibrated animation and the real iOS/Android comparison below. Earlier `v1.1.0` artifacts retain the previous motion.
+>
+> **Unreleased rapid-input fix:** this checkout improves interrupted View/Compose animations and Compose glyph preparation. The published `v1.2.0` dependency below does **not** include this fix yet. Demo GIFs show v1.2.0's isolated transitions.
 
 ## Demo
 
@@ -115,7 +117,9 @@ Set duration to **0** for immediate updates. Negative durations and invalid View
 
 The View cancels animation when hidden or detached. System animation settings are respected; disabling animations does not leave stale digits. Accessibility exposes the latest complete integer, not separate animated fragments.
 
-On interrupted updates, Compose preserves the currently presented glyph layers; the View settles the preceding target before starting the next transition. The View's interruption behavior is therefore not identical to SwiftUI.
+Both implementations retarget from the currently displayed positions, opacity and phase instead of completing the previous target or restarting every digit's delay. Rapid updates shorten the base duration to twice the faster of the last two update intervals, normally at least 16 ms but never longer than the configured duration; pauses restore isolated-click timing. Continuous updates do not reintroduce carry staggering.
+
+This is not input debouncing: the host still accepts every click and owns the latest integer. Compose prepares one layout at a time and retains only the newest pending display request, so slow raster preparation cannot accumulate a queue or restart indefinitely. Rendering can skip intermediate values under load, but converges to the latest accepted value. Cold glyph preparation leaves the latest sharp text visible; an obsolete first layout cannot roll it back. Accessibility and `AnimatedNumberView.number` expose the latest integer immediately.
 
 ### SwiftUI reference and fidelity
 
@@ -129,11 +133,13 @@ The implementation approximates those observed character, blur, phase and width 
 
 ### Performance boundaries
 
-The View reuses one animator and cached alpha-mask blur rasters. Compose caches glyph rasters with an 8 MiB / 24-entry LRU limit and avoids animation-driven remeasurement when text width is unchanged. Active transitions can retain evicted glyphs, so the LRU limit is not a total memory cap.
+The View reuses one animator, bounded per-character layer states and cached alpha-mask blur rasters. Compose uses an 8 MiB / 24-entry LRU and also retains the current layout's glyph working set, avoiding repeated eviction of unchanged large digits. New blur rasters crop transparent edges; cache hits do not rescan those edges or allocate temporary glyph bitmaps. Active transitions and the working set can retain evicted entries, so the LRU limit is not a total memory cap.
 
-This is **not a claim of optimal performance**. Compose still rasterizes new values and generates missing blur variants on the UI thread; gradient/shadow styles use a more expensive software Gaussian blur path. Large fonts, many simultaneous components and frequent interruptions need workload-specific profiling.
+Compose shapes fonts and draws its typography/Brush snapshot on the UI thread; pixel extraction, cache lookup and missing blur generation run in one background preparation pipeline. Removing the component or changing its typography cancels obsolete work, including software Gaussian blur between rows. Prepared immutable layouts are published through Compose snapshot state without waiting for a return to the UI dispatcher.
 
-API 34 emulator Debug profiling of the native comparison sequence reported 30.95% janky frames for View and 34.34% for Compose in an initial run. A later Compose run after the equal-width optimization reported 7/301 janky frames (2.33%), sampled UI work at approximately 1.95 ms p95, and a 70 ms UI outlier. Substantial buffer/GPU waiting and run-to-run variability prevent attributing that difference solely to the code change. These are whole-demo observations, not isolated component benchmarks, release-build measurements or real-device guarantees.
+This is **not a claim of optimal performance**. New values still require shaping, a bitmap snapshot and pixel-key allocation; gradient/shadow styles use more expensive software Gaussian blur. Cold starts, large fonts and many simultaneous components need workload-specific profiling. Android still does not promise pixel-identical SwiftUI spring or raster output.
+
+Historical **v1.2.0**, pre-fix API 34 emulator Debug profiling of the native comparison sequence reported 30.95% janky frames for View and 34.34% for Compose in an initial run. A later Compose run after the equal-width optimization reported 7/301 janky frames (2.33%), sampled UI work at approximately 1.95 ms p95, and a 70 ms UI outlier. Substantial buffer/GPU waiting and run-to-run variability prevent attributing that difference solely to the code change. These are whole-demo observations, not isolated component benchmarks, release-build measurements, measurements of this rapid-input fix or real-device guarantees.
 
 ## Build and verify
 
@@ -161,7 +167,26 @@ adb shell am instrument -w \
   tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke
 ```
 
-Require a `PASS:` result; Android instrumentation can return a zero process exit code even on failure. Checks cover signed integer rendering, rollover measurement, rapid updates, custom typography and alpha, unchanged leading-digit pixels during a carry, disabled animation, visibility/detachment, recreation and demo cancellation. The v1.2.0 refinement was exercised locally on API 34 with animations enabled and disabled. CI is configured for an independent consumer build and emulator checks on API 26 and 35.
+Exercise the actual demo controls with 12 increments, 12 decrements and eight rapid direction reversals:
+
+```sh
+adb shell am instrument -w -e showcase compose-rapid \
+  tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke
+adb shell am instrument -w -e showcase views-rapid \
+  tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke
+```
+
+The rapid scenarios compare actual numeric-area screenshots 300 ms after the final click and 500 ms later, rather than checking accessibility text alone. Run with system animator scale set to 1.
+
+Require a `PASS:` result; Android instrumentation can return a zero process exit code even on failure. Checks cover signed integer rendering, rollover measurement, interrupted-frame continuity, custom typography and alpha, unchanged leading-digit pixels during a carry, interrupted Compose gradient/shadow rendering versus immediate text, disabled animation, visibility/detachment, recreation and demo cancellation. Local verification uses API 34. CI is configured for an independent consumer build and enabled/disabled animation checks on API 26 and 35.
+
+## Unreleased changes
+
+- Preserve current glyph positions and phase during rapid updates and reversals; do not snap to an obsolete target.
+- Adapt continuous-update timing without restarting carry delays or discarding click input.
+- Keep the current Compose glyph working set, crop new blur rasters and move pixel/effect preparation off the UI thread.
+- Prepare one Compose display target at a time, with only the newest request pending.
+- Extend the existing smoke runner with real rapid-control and customized typography rendering checks.
 
 ## 1.2.0 changes
 

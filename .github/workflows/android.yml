@@ -41,3 +41,8 @@ jobs:
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             result="$(adb shell am instrument -w tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke)"; printf '%s\n' "$result"; echo "$result" | grep -q '^PASS:'
+            adb shell settings put global animator_duration_scale 1
+            result="$(adb shell am instrument -w tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke)"; printf '%s\n' "$result"; echo "$result" | grep -q '^PASS:'
+            for mode in compose-rapid views-rapid; do
+              result="$(adb shell am instrument -w -e showcase "$mode" tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke)"; printf '%s\n' "$result"; echo "$result" | grep -q '^PASS:'
+            done
