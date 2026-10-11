@@ -28,7 +28,53 @@ class NumericSmoke : Instrumentation() {
         val result = Bundle()
         var code = Activity.RESULT_CANCELED
         try {
-            if (showcase?.contains("-reference") == true) {
+            if (showcase == "interruption") {
+                screen = launch(SampleActivity::class.java, 129)
+                verifyInterrupted(checkNotNull(screen).findViewById(R.id.animatedNumberView))
+                result.putString("stream", "PASS: interrupted View animation preserves the visible frame\n")
+            } else if (showcase == "styled") {
+                screen = launch(MainActivity::class.java, 129)
+                verifyComposeStyle(checkNotNull(screen))
+                result.putString("stream", "PASS: interrupted Compose gradient/shadow typography matches immediate text\n")
+            } else if (showcase?.endsWith("-rapid") == true) {
+                val mode = checkNotNull(showcase)
+                screen = launch(if (mode.startsWith("views")) SampleActivity::class.java else MainActivity::class.java, 129)
+                awaitValue("129")
+                SystemClock.sleep(900)
+                val increase = checkNotNull(nodes(uiAutomation.rootInActiveWindow).firstOrNull {
+                    it.contentDescription?.toString() == targetContext.getString(R.string.increase_description)
+                })
+                val decrease = checkNotNull(nodes(uiAutomation.rootInActiveWindow).firstOrNull {
+                    it.contentDescription?.toString() == targetContext.getString(R.string.decrease_description)
+                })
+                val buttons = listOf(increase, decrease).map { node ->
+                    var button = node
+                    while (!button.isClickable) button = checkNotNull(button.parent)
+                    button
+                }
+                for ((index, button) in buttons.withIndex()) {
+                    repeat(12) {
+                        check(button.performAction(AccessibilityNodeInfo.ACTION_CLICK)) { "Rapid click rejected" }
+                        SystemClock.sleep(80)
+                    }
+                    val value = if (index == 0) "141" else "129"
+                    awaitValue(value)
+                    SystemClock.sleep(300)
+                    verifyRapidSettling(value)
+                    if (index == 0) capture("$mode-incremented")
+                }
+                repeat(8) {
+                    for (button in buttons) {
+                        check(button.performAction(AccessibilityNodeInfo.ACTION_CLICK)) { "Rapid reversal rejected" }
+                        SystemClock.sleep(60)
+                    }
+                }
+                SystemClock.sleep(300)
+                awaitValue("129")
+                verifyRapidSettling("129")
+                capture("$mode-final")
+                result.putString("stream", "PASS: $mode handles 12 increments, 12 decrements and 8 rapid reversals\n")
+            } else if (showcase?.contains("-reference") == true) {
                 val mode = checkNotNull(showcase)
                 screen = launch(if (mode.startsWith("views")) SampleActivity::class.java else MainActivity::class.java, 129)
                 waitForIdleSync()
@@ -95,7 +141,8 @@ class NumericSmoke : Instrumentation() {
                 SystemClock.sleep(1150)
                 awaitValue("0")
                 capture("compose-verified")
-                result.putString("stream", "PASS: signed integer rendering, wrap-content shrink/grow, padding, rapid updates, zero duration, hidden/detached settling, View rotation/replay cancellation, Compose increment/decrement/reset/replay cancellation\n")
+                verifyComposeStyle(checkNotNull(screen))
+                result.putString("stream", "PASS: signed integer rendering, wrap-content shrink/grow, padding, rapid updates, zero duration, hidden/detached settling, View rotation/replay cancellation, Compose increment/decrement/reset/replay cancellation and interrupted gradient/shadow typography\n")
             }
             code = Activity.RESULT_OK
         } catch (failure: Throwable) {
@@ -117,12 +164,7 @@ class NumericSmoke : Instrumentation() {
         val numeric = checkNotNull(nodes(uiAutomation.rootInActiveWindow).firstOrNull { it.text?.toString() == "129" })
         check(numeric.refresh()) { "Numeric accessibility node became stale" }
         numeric.getBoundsInScreen(bounds)
-        fun render(): Bitmap {
-            val screenshot = checkNotNull(uiAutomation.takeScreenshot())
-            return try {
-                Bitmap.createBitmap(screenshot, bounds.left, bounds.top, bounds.width(), bounds.height())
-            } finally { screenshot.recycle() }
-        }
+        fun render() = numericScreenshot(bounds)
         val before = render()
         update(130)
         SystemClock.sleep(200)
@@ -146,6 +188,106 @@ class NumericSmoke : Instrumentation() {
         awaitValue("8")
     }
 
+    private fun verifyComposeStyle(screen: Activity) {
+        val number = androidx.compose.runtime.mutableStateOf(42)
+        val immediate = androidx.compose.runtime.mutableStateOf(true)
+        val style = androidx.compose.ui.text.TextStyle(
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+            fontSize = androidx.compose.ui.unit.TextUnit(48f, androidx.compose.ui.unit.TextUnitType.Sp),
+            brush = androidx.compose.ui.graphics.Brush.linearGradient(listOf(
+                androidx.compose.ui.graphics.Color(0x996020A0), androidx.compose.ui.graphics.Color(0x992070B0))),
+            shadow = androidx.compose.ui.graphics.Shadow(
+                androidx.compose.ui.graphics.Color(0x40202020), androidx.compose.ui.geometry.Offset(3f, 5f), 2f)
+        )
+        val content = onMain {
+            android.widget.FrameLayout(targetContext).apply {
+                setBackgroundColor(android.graphics.Color.WHITE)
+                addView(androidx.compose.ui.platform.ComposeView(screen).apply {
+                    setContent {
+                        if (immediate.value) androidx.compose.foundation.text.BasicText(number.value.toString(), style = style)
+                        else tech.hezy.numerictext.AnimatedNumber(number.value, style = style)
+                    }
+                }, android.widget.FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.CENTER))
+                screen.setContentView(this)
+            }
+        }
+        awaitValue("42")
+        SystemClock.sleep(250)
+        val bounds = onMain {
+            val location = IntArray(2)
+            content.getLocationOnScreen(location)
+            android.graphics.Rect(location[0], location[1] + content.height / 4,
+                location[0] + content.width, location[1] + content.height * 3 / 4)
+        }
+        val reference = numericScreenshot(bounds)
+        try {
+            runOnMainSync { number.value = 129; immediate.value = false }
+            for (value in intArrayOf(130, 99, 100, -1, -10, Int.MIN_VALUE, Int.MAX_VALUE, 42)) {
+                runOnMainSync { number.value = value }
+                SystemClock.sleep(80)
+            }
+            awaitValue("42")
+            await("Interrupted Compose gradient/shadow typography converges to BasicText") {
+                val actual = numericScreenshot(bounds)
+                try { actual.sameAs(reference) } finally { actual.recycle() }
+            }
+        } finally { reference.recycle() }
+        capture("compose-styled-verified")
+    }
+
+    private fun numericScreenshot(bounds: android.graphics.Rect): Bitmap {
+        val screenshot = checkNotNull(uiAutomation.takeScreenshot())
+        return try {
+            Bitmap.createBitmap(screenshot, bounds.left, bounds.top, bounds.width(), bounds.height())
+        } finally { screenshot.recycle() }
+    }
+
+    private fun verifyRapidSettling(value: String) {
+        val bounds = android.graphics.Rect()
+        val numeric = checkNotNull(nodes(uiAutomation.rootInActiveWindow).firstOrNull { it.text?.toString() == value })
+        check(numeric.refresh()) { "Numeric accessibility node became stale" }
+        numeric.getBoundsInScreen(bounds)
+        val before = numericScreenshot(bounds)
+        SystemClock.sleep(500)
+        val after = numericScreenshot(bounds)
+        try {
+            check(before.sameAs(after)) { "Rapid input still changed visible digits after 300 ms; target=$value" }
+        } finally { before.recycle(); after.recycle() }
+    }
+
+    private fun verifyInterrupted(view: AnimatedNumberView) {
+        check(android.animation.ValueAnimator.areAnimatorsEnabled()) { "Enable animations for interruption verification" }
+        runOnMainSync { view.setNumber(129) }
+        SystemClock.sleep(850)
+        runOnMainSync { view.setNumber(130) }
+        for (value in intArrayOf(131, 130, 99, 100, -1, 0, -10, 10, Int.MIN_VALUE, Int.MAX_VALUE)) {
+            SystemClock.sleep(80)
+            onMain {
+                val before = image(view)
+                view.setNumber(value)
+                val after = image(view)
+                try {
+                    if (!before.sameAs(after)) {
+                        val a = IntArray(before.width * before.height)
+                        val b = IntArray(a.size)
+                        before.getPixels(a, 0, before.width, 0, 0, before.width, before.height)
+                        after.getPixels(b, 0, after.width, 0, 0, after.width, after.height)
+                        // 允许亚像素重算的微小栅格差异，不允许整位跳回上次目标。
+                        val ink = a.sumOf { android.graphics.Color.alpha(it).toLong() }
+                        val delta = a.indices.sumOf { index ->
+                            kotlin.math.abs(android.graphics.Color.alpha(a[index]) - android.graphics.Color.alpha(b[index])).toLong()
+                        }
+                        check(delta <= ink / 100) { "Rapid update to $value changed $delta/$ink alpha coverage without an animation frame" }
+                    }
+                } finally { before.recycle(); after.recycle() }
+            }
+        }
+        SystemClock.sleep(300)
+        check(view.number == Int.MAX_VALUE)
+    }
+
     private fun launch(type: Class<out Activity>, number: Int = 0): Activity {
         val activity = startActivitySync(
             Intent(targetContext, type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("demo_number", number)
@@ -156,9 +298,7 @@ class NumericSmoke : Instrumentation() {
 
     private fun verifyNative(view: AnimatedNumberView) {
         fun expect(value: Int, label: String) {
-            SystemClock.sleep((view.animationDurationMillis.toLong() * 1.5).toLong() + 100)
-            waitForIdleSync()
-            val images = onMain {
+            val expected = onMain {
                 val reference = AnimatedNumberView(targetContext).apply {
                     textSizePixels = view.textSizePixels
                     textColor = view.textColor
@@ -168,10 +308,18 @@ class NumericSmoke : Instrumentation() {
                     measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
                     layout(0, 0, measuredWidth, measuredHeight)
                 }
-                image(view) to image(reference)
+                image(reference)
             }
-            try { check(images.first.sameAs(images.second)) { "$label rendered wrong digits or dimensions for $value" } }
-            finally { images.first.recycle(); images.second.recycle() }
+            try {
+                await("$label renders $value with the correct digits and dimensions") {
+                    onMain {
+                        if (view.width != expected.width || view.height != expected.height) false else {
+                            val actual = image(view)
+                            try { actual.sameAs(expected) } finally { actual.recycle() }
+                        }
+                    }
+                }
+            } finally { expected.recycle() }
         }
         // 初始零也必须完整绘制，不能依赖首次动画才出现。
         expect(0, "Initial value")
@@ -180,6 +328,8 @@ class NumericSmoke : Instrumentation() {
             expect(value, "Rollover")
         }
         if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            verifyInterrupted(view)
+            expect(Int.MAX_VALUE, "Rapid reversal and signed boundaries")
             runOnMainSync { view.setNumber(129) }
             expect(129, "Carry start")
             val before = onMain { image(view) }

@@ -19,6 +19,11 @@ internal object NumericTextTransition {
     }
     const val ANIMATION_DURATION = 500
 
+    // 取最近两次输入中较快的间隔，避免一帧调度抖动重新拉长连点动画；停顿后恢复宿主时长。
+    fun durationForUpdate(baseMillis: Int, intervalMillis: Long, previousIntervalMillis: Long): Int =
+        if (intervalMillis >= baseMillis) baseMillis else minOf(baseMillis.toLong(),
+            maxOf(16L, minOf(intervalMillis, previousIntervalMillis) * 2)).toInt()
+
     fun animationsEnabled(context: Context): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ValueAnimator.areAnimatorsEnabled()

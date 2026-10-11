@@ -24,8 +24,8 @@ import kotlin.math.abs
 
 /**
  * 对照 SwiftUI numericText 的逐字符位移、缩放、模糊和淡变；不变字符保持清晰，不补前导零。
- * 首次赋值立即显示。连续赋值从上次目标值切换，隐藏、移除或关闭系统动画时立即显示最新值。
- * animationDuration 为单字符基础时长；逐字符错峰最多额外增加 48%，0 表示无动画。
+ * 首次赋值立即显示。连续赋值保留当前字形位置和相位；隐藏、移除或关闭系统动画时立即显示最新值。
+ * animationDuration 为孤立更新的单字符基础时长；错峰最多增加 48%，连续更新自适应缩短且不重复错峰，0 表示无动画。
  */
 class AnimatedNumberView @JvmOverloads constructor(
     context: Context,
@@ -39,26 +39,61 @@ class AnimatedNumberView @JvmOverloads constructor(
     }
     private val fontMetrics = Paint.FontMetrics()
     private val glyphBounds = Rect()
-    private var oldCharacters = CharArray(11)
-    private var targetCharacters = CharArray(11)
-    private var oldLength = 1
+    private val targetCharacters = CharArray(11)
     private var targetLength = 1
     private var targetNumber = 0
     private var targetText = "0"
     private var hasNumber = false
+    private var lastUpdateMillis = 0L
+    private var previousIntervalMillis = Long.MAX_VALUE
     private var digitWidth = 0f
     private var lineHeight = 0f
     private var progress = 1f
-    private var direction = 1f
     private var initialized = false
     private var observingMotion = false
     private val advances = FloatArray(11)
     private val blurredGlyphs = arrayOfNulls<Bitmap>(11 * 8)
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private var blurPadding = 0f
-    private var changedColumns = 0
     private var timelineScale = 1f
-    private var characterStagger = 0f
+    private var startWidth = 0f
+    private val targetCenters = FloatArray(11)
+    private val columnDelays = FloatArray(11)
+    // 最多 11 个字符位置 × 11 种字形；复用状态，不为连续点击积累动画队列。
+    private val states = arrayOfNulls<DigitLayer>(121)
+    private var layers = ArrayList<DigitLayer>(22)
+    private var nextLayers = ArrayList<DigitLayer>(22)
+
+    private class DigitLayer(val column: Int, val character: Char) {
+        var x = 0f
+        var y = 0f
+        var alpha = 1f
+        var endX = 0f
+        var endY = 0f
+        var endAlpha = 1f
+        var delay = 0f
+    }
+
+    private fun layer(column: Int, character: Char, x: Float, y: Float, alpha: Float,
+        endX: Float = x, endY: Float = y, endAlpha: Float = alpha, delay: Float = 0f): DigitLayer {
+        val index = column * 11 + glyphIndex(character)
+        val layer = states[index] ?: DigitLayer(column, character).also { states[index] = it }
+        layer.x = x
+        layer.y = y
+        layer.alpha = alpha
+        layer.endX = endX
+        layer.endY = endY
+        layer.endAlpha = endAlpha
+        layer.delay = delay
+        return layer
+    }
+
+    private fun currentTextWidth(): Float {
+        val targetWidth = textWidth(targetCharacters, targetLength)
+        if (progress >= 1f) return targetWidth
+        val fraction = NumericTextTransition.SnappyInterpolator.getInterpolation(progress * timelineScale)
+        return startWidth + (targetWidth - startWidth) * fraction
+    }
 
     private fun glyphIndex(character: Char): Int = if (character == '-') 10 else character - '0'
 
@@ -70,10 +105,7 @@ class AnimatedNumberView @JvmOverloads constructor(
 
     // 模糊字形仅在目标/字体改变时生成；API 21 也使用真实模糊，不依赖 RenderEffect。
     private fun prepareGlyphs() {
-        for (index in 0 until max(oldLength, targetLength)) {
-            if (index < oldLength) prepareGlyph(oldCharacters[index])
-            if (index < targetLength) prepareGlyph(targetCharacters[index])
-        }
+        for (index in layers.indices) prepareGlyph(layers[index].character)
     }
 
     private fun prepareGlyph(character: Char) {
@@ -182,12 +214,11 @@ class AnimatedNumberView @JvmOverloads constructor(
         addUpdateListener {
             progress = it.animatedValue as Float
             invalidate()
-            if (textWidth(oldCharacters, oldLength) != textWidth(targetCharacters, targetLength)) requestLayout()
+            if (startWidth != textWidth(targetCharacters, targetLength)) requestLayout()
         }
         addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
-                progress = 1f
-                oldLength = 0
+                if (progress >= 1f) layers.clear()
                 requestLayout()
                 invalidate()
             }
@@ -213,7 +244,6 @@ class AnimatedNumberView @JvmOverloads constructor(
             attributes.recycle()
         }
         targetCharacters[0] = '0'
-        oldCharacters[0] = '0'
         updateMeasurements()
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         accessibilityLiveRegion = ACCESSIBILITY_LIVE_REGION_POLITE
@@ -224,12 +254,18 @@ class AnimatedNumberView @JvmOverloads constructor(
     /** 首次赋值和重复赋值不播放动画；必须在 UI 线程调用。 */
     fun setNumber(number: Int) {
         if (hasNumber && targetNumber == number) return
-        settle()
-        oldLength = targetLength
-        val reusableCharacters = oldCharacters
-        oldCharacters = targetCharacters
-        targetCharacters = reusableCharacters
-        direction = if (number > targetNumber) 1f else -1f
+        val oldWidth = currentTextWidth()
+        val time = progress * timelineScale
+        val interrupted = progress < 1f
+        val now = android.os.SystemClock.elapsedRealtime()
+        val interval = if (lastUpdateMillis == 0L) Long.MAX_VALUE else now - lastUpdateMillis
+        val duration = NumericTextTransition.durationForUpdate(animationDurationMillis, interval, previousIntervalMillis)
+        previousIntervalMillis = interval
+        lastUpdateMillis = if (hasNumber) now else 0L
+        if (!interrupted) seedLayers(oldWidth)
+        animator.cancel()
+        val previousText = targetText
+        val direction = if (number > targetNumber) 1f else -1f
         targetNumber = number
         targetText = number.toString()
         targetLength = targetText.length
@@ -238,23 +274,92 @@ class AnimatedNumberView @JvmOverloads constructor(
         val animate = hasNumber && animationDurationMillis > 0 && isAttachedToWindow &&
             isShown && windowVisibility == VISIBLE && NumericTextTransition.animationsEnabled(context)
         hasNumber = true
-        changedColumns = 0
-        for (index in 0 until max(oldLength, targetLength)) {
-            if (index >= oldLength || index >= targetLength || oldCharacters[index] != targetCharacters[index]) changedColumns++
-        }
-        characterStagger = if (changedColumns > 1) minOf(0.24f, 0.48f / (changedColumns - 1)) else 0f
-        timelineScale = 1f + characterStagger * (changedColumns - 1).coerceAtLeast(0)
+        startWidth = oldWidth
+        configureTargets(previousText, interrupted || duration < animationDurationMillis)
+        retargetLayers(time, interrupted, direction * paint.textSize * 0.42f)
         if (animate) {
             progress = 0f
-            animator.duration = (animationDurationMillis.toDouble() * timelineScale).toLong()
+            animator.duration = (duration.toDouble() * timelineScale).toLong()
             prepareGlyphs()
             animator.start()
         } else {
             progress = 1f
-            oldLength = 0
+            layers.clear()
         }
         requestLayout()
         invalidate()
+    }
+
+    private fun seedLayers(width: Float) {
+        layers.clear()
+        var x = -width / 2f
+        for (index in 0 until targetLength) {
+            val advance = advances[glyphIndex(targetCharacters[index])]
+            layers.add(layer(index, targetCharacters[index], x + advance / 2f, 0f, 1f))
+            x += advance
+        }
+    }
+
+    private fun configureTargets(previousText: String, suppressStagger: Boolean) {
+        var changedColumns = 0
+        for (index in 0 until max(previousText.length, targetLength)) {
+            if (previousText.getOrNull(index) != targetText.getOrNull(index)) changedColumns++
+        }
+        val stagger = if (!suppressStagger && changedColumns > 1) minOf(0.24f, 0.48f / (changedColumns - 1)) else 0f
+        timelineScale = 1f + stagger * (changedColumns - 1).coerceAtLeast(0)
+        var changedIndex = 0
+        for (index in columnDelays.indices) {
+            columnDelays[index] = if (previousText.getOrNull(index) != targetText.getOrNull(index)) {
+                changedIndex++ * stagger
+            } else 0f
+        }
+        var x = -textWidth(targetCharacters, targetLength) / 2f
+        for (index in 0 until targetLength) {
+            val advance = advances[glyphIndex(targetCharacters[index])]
+            targetCenters[index] = x + advance / 2f
+            x += advance
+        }
+    }
+
+    private fun retargetLayers(time: Float, interrupted: Boolean, travel: Float) {
+        nextLayers.clear()
+        for (index in layers.indices) {
+            val layer = layers[index]
+            if (retargetLayer(layer, time, interrupted, travel)) nextLayers.add(layer)
+        }
+        for (column in 0 until targetLength) {
+            val character = targetCharacters[column]
+            if (nextLayers.none { it.column == column && it.character == character }) {
+                nextLayers.add(layer(column, character, targetCenters[column],
+                    if (character == '-') 0f else travel, 0f,
+                    targetCenters[column], 0f, 1f, columnDelays[column]))
+            }
+        }
+        val reusableLayers = layers
+        layers = nextLayers
+        nextLayers = reusableLayers
+    }
+
+    private fun retargetLayer(layer: DigitLayer, time: Float, interrupted: Boolean, travel: Float): Boolean {
+        val phase = NumericTextTransition.SnappyInterpolator.getInterpolation(time - layer.delay)
+        val alpha = layer.alpha + (layer.endAlpha - layer.alpha) * phase
+        val incoming = layer.column < targetLength && layer.character == targetCharacters[layer.column]
+        if (alpha <= 0.001f && !incoming) return false
+        val endX = if (incoming) targetCenters[layer.column] else layer.endX
+        val endY = if (incoming || layer.character == '-') 0f else -travel
+        val endAlpha = if (incoming) 1f else 0f
+        if (interrupted && layer.endX == endX && layer.endY == endY && layer.endAlpha == endAlpha) {
+            layer.delay -= time
+        } else {
+            layer.x += (layer.endX - layer.x) * phase
+            layer.y += (layer.endY - layer.y) * phase
+            layer.alpha = alpha
+            layer.endX = endX
+            layer.endY = endY
+            layer.endAlpha = endAlpha
+            layer.delay = columnDelays[layer.column]
+        }
+        return true
     }
 
     private fun updateMeasurements() {
@@ -281,16 +386,14 @@ class AnimatedNumberView @JvmOverloads constructor(
     private fun settle() {
         animator.cancel()
         progress = 1f
-        oldLength = 0
+        layers.clear()
+        nextLayers.clear()
         requestLayout()
         invalidate()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val oldWidth = textWidth(oldCharacters, oldLength)
-        val targetWidth = textWidth(targetCharacters, targetLength)
-        val time = progress * timelineScale
-        val width = oldWidth + (targetWidth - oldWidth) * NumericTextTransition.SnappyInterpolator.getInterpolation(time)
+        val width = currentTextWidth()
         val desiredWidth = max(suggestedMinimumWidth, ceil(width + paint.textSize * 0.4f).toInt() + paddingLeft + paddingRight)
         val desiredHeight = max(suggestedMinimumHeight, ceil(lineHeight + paint.textSize * 0.4f).toInt() + paddingTop + paddingBottom)
         setMeasuredDimension(
@@ -307,42 +410,25 @@ class AnimatedNumberView @JvmOverloads constructor(
         super.onDraw(canvas)
         val baseColor = paint.color
         val baseline = paddingTop + (height - paddingTop - paddingBottom - lineHeight) / 2f - fontMetrics.ascent
-        val oldWidth = textWidth(oldCharacters, oldLength)
-        val targetWidth = textWidth(targetCharacters, targetLength)
-        val time = progress * timelineScale
-        val spatialProgress = NumericTextTransition.SnappyInterpolator.getInterpolation(time)
         val centerX = paddingLeft + (width - paddingLeft - paddingRight) / 2f
-        val columns = max(oldLength, targetLength)
-        var oldX = -oldWidth / 2f
-        var targetX = -targetWidth / 2f
-        var changedIndex = 0
-        for (column in 0 until columns) {
-            val oldIndex = if (column < oldLength) column else -1
-            val targetIndex = if (column < targetLength) column else -1
-            val oldAdvance = if (oldIndex >= 0) advances[glyphIndex(oldCharacters[oldIndex])] else 0f
-            val targetAdvance = if (targetIndex >= 0) advances[glyphIndex(targetCharacters[targetIndex])] else 0f
-            val oldCenter = centerX + oldX + oldAdvance / 2f
-            val targetCenter = centerX + targetX + targetAdvance / 2f
-            paint.color = baseColor
-            if (progress == 1f || (oldIndex >= 0 && targetIndex >= 0 && oldCharacters[oldIndex] == targetCharacters[targetIndex])) {
-                val x = oldCenter + (targetCenter - oldCenter) * spatialProgress
-                if (targetIndex >= 0) canvas.drawText(targetCharacters, targetIndex, 1, x, baseline, paint)
-            } else {
-                val delay = changedIndex++ * characterStagger
-                val phase = NumericTextTransition.SnappyInterpolator.getInterpolation((time - delay).coerceIn(0f, 1f))
-                val travel = paint.textSize * 0.42f
-                if (oldIndex >= 0) {
-                    val sign = oldCharacters[oldIndex] == '-'
-                    drawGlyph(canvas, oldCharacters[oldIndex], oldCenter, baseline - (if (sign) 0f else direction * phase * travel), 1f - phase)
-                }
-                paint.color = baseColor
-                if (targetIndex >= 0) {
-                    val sign = targetCharacters[targetIndex] == '-'
-                    drawGlyph(canvas, targetCharacters[targetIndex], targetCenter, baseline + (if (sign) 0f else direction * (1f - phase) * travel), phase)
-                }
+        if (progress >= 1f) {
+            var x = centerX - textWidth(targetCharacters, targetLength) / 2f
+            for (index in 0 until targetLength) {
+                val advance = advances[glyphIndex(targetCharacters[index])]
+                canvas.drawText(targetCharacters, index, 1, x + advance / 2f, baseline, paint)
+                x += advance
             }
-            oldX += oldAdvance
-            targetX += targetAdvance
+        } else {
+            val time = progress * timelineScale
+            for (index in layers.indices) {
+                val layer = layers[index]
+                val phase = NumericTextTransition.SnappyInterpolator.getInterpolation(time - layer.delay)
+                paint.color = baseColor
+                drawGlyph(canvas, layer.character,
+                    centerX + layer.x + (layer.endX - layer.x) * phase,
+                    baseline + layer.y + (layer.endY - layer.y) * phase,
+                    layer.alpha + (layer.endAlpha - layer.alpha) * phase)
+            }
         }
         paint.color = baseColor
     }
