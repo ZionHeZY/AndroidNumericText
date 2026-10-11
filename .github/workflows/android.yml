@@ -43,6 +43,5 @@ jobs:
             result="$(adb shell am instrument -w tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke)"; printf '%s\n' "$result"; echo "$result" | grep -q '^PASS:'
             adb shell settings put global animator_duration_scale 1
             result="$(adb shell am instrument -w tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke)"; printf '%s\n' "$result"; echo "$result" | grep -q '^PASS:'
-            for mode in compose-rapid views-rapid; do
-              result="$(adb shell am instrument -w -e showcase "$mode" tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke)"; printf '%s\n' "$result"; echo "$result" | grep -q '^PASS:'
-            done
+            result="$(adb shell am instrument -w -e showcase compose-rapid tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke)"; printf '%s\n' "$result"; echo "$result" | grep -q '^PASS:'
+            result="$(adb shell am instrument -w -e showcase views-rapid tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke)"; printf '%s\n' "$result"; echo "$result" | grep -q '^PASS:'
