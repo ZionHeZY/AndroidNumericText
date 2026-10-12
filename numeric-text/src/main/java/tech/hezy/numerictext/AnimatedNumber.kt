@@ -67,6 +67,7 @@ import kotlinx.coroutines.withContext
 private val DefaultNumberStyle = TextStyle(fontSize = 36.sp)
 private const val BlurSteps = 8
 private const val SignPlace = -1
+private const val NumberLayoutCacheSize = 16
 
 /**
  * Digits transition independently; unchanged glyphs remain sharp as the width changes.
@@ -107,7 +108,7 @@ fun AnimatedNumber(
         textStyle.fontStyle ?: FontStyle.Normal,
         textStyle.fontSynthesis ?: FontSynthesis.All
     ).value
-    val measurer = rememberTextMeasurer(cacheSize = 16)
+    val measurer = rememberTextMeasurer(cacheSize = NumberLayoutCacheSize)
     val atlas = remember(textStyle, density, layoutDirection, resolvedFont, measurer) {
         NumberGlyphAtlas(textStyle, measurer, density, layoutDirection)
     }
@@ -333,13 +334,16 @@ private class NumberGlyphAtlas(
     private val kernels = if (monochrome) emptyArray() else Array(BlurSteps) { gaussianKernel(maxBlur * (it + 1) / BlurSteps) }
     private val blurPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val cache = LinkedHashMap<GlyphPixels, CachedNumberGlyph>(24, 0.75f, true)
+    // Exact layouts avoid rerasterizing repeated numbers without losing shaping or brush context.
+    private val layoutCache = LinkedHashMap<Int, CachedNumberLayout>(NumberLayoutCacheSize, 0.75f, true)
     // 当前布局必须常驻；否则大字号的工作集超过 LRU 上限后，会反复重建未变化的字形。
-    private var currentGlyphs = HashMap<GlyphPixels, CachedNumberGlyph>(11)
-    private var nextGlyphs = HashMap<GlyphPixels, CachedNumberGlyph>(11)
+    private var currentGlyphs = android.util.ArrayMap<GlyphPixels, CachedNumberGlyph>(11)
+    private var nextGlyphs = android.util.ArrayMap<GlyphPixels, CachedNumberGlyph>(11)
     private var cacheBytes = 0L
     private var hasRequest = false
     private var lastRequestMillis = 0L
     private var previousIntervalMillis = Long.MAX_VALUE
+    private data class CachedNumberLayout(val layout: NumberLayout, val glyphs: List<CachedNumberGlyph>)
     private data class Snapshot(
         val number: Int,
         val text: String,
@@ -362,6 +366,18 @@ private class NumberGlyphAtlas(
 
     suspend fun measure(request: NumberRequest, onPrepared: (NumberLayout) -> Unit) {
         val number = request.number
+        layoutCache[number]?.let { cached ->
+            kotlin.coroutines.coroutineContext.ensureActive()
+            currentGlyphs.clear()
+            for (index in cached.glyphs.indices) {
+                val entry = cached.glyphs[index]
+                cache[entry.key]
+                currentGlyphs[entry.key] = entry
+            }
+            onPrepared(cached.layout.copy(
+                requestedAtMillis = request.requestedAtMillis, durationMillis = request.durationMillis))
+            return
+        }
         val text = number.toString()
         val layout = measurer.measure(text, style, softWrap = false, maxLines = 1)
         val bitmap = Bitmap.createBitmap(max(1, layout.size.width + rasterPadding * 2),
@@ -425,6 +441,8 @@ private class NumberGlyphAtlas(
                         val entries = cache.entries.iterator()
                         val oldest = entries.next()
                         cacheBytes -= oldest.key.byteCount + oldest.value.glyph.byteCount
+                        // Layout reuse must not extend raster retention beyond this same LRU budget.
+                        layoutCache.values.removeAll { cached -> cached.glyphs.any { it === oldest.value } }
                         // A running transition can still own these rasters; only drop the cache reference.
                         entries.remove()
                     }
@@ -441,7 +459,16 @@ private class NumberGlyphAtlas(
             layout.firstBaseline + verticalPadding,
             mapOf(FirstBaseline to (layout.firstBaseline + verticalPadding).roundToInt(),
                 LastBaseline to (layout.lastBaseline + verticalPadding).roundToInt()), layout, digits,
-            snapshot.requestedAtMillis, snapshot.durationMillis)
+            snapshot.requestedAtMillis, snapshot.durationMillis).also { prepared ->
+            if (currentGlyphs.values.all { cache.containsKey(it.key) }) {
+                layoutCache[number] = CachedNumberLayout(prepared, currentGlyphs.values.toList())
+                if (layoutCache.size > NumberLayoutCacheSize) {
+                    val entries = layoutCache.entries.iterator()
+                    entries.next()
+                    entries.remove()
+                }
+            }
+        }
     }
 
     private fun crop(source: GlyphPixels): GlyphPixels {
@@ -537,6 +564,8 @@ private fun gaussianBlur(source: IntArray, scratch: IntArray, output: IntArray, 
     for (pass in 0..1) {
         val input = if (pass == 0) source else scratch
         val result = if (pass == 0) scratch else output
+        val stride = if (pass == 0) 1 else width
+        val extent = if (pass == 0) width else height
         for (y in 0 until height) {
             context.ensureActive()
             for (x in 0 until width) {
@@ -544,11 +573,14 @@ private fun gaussianBlur(source: IntArray, scratch: IntArray, output: IntArray, 
                 var red = 0f
                 var green = 0f
                 var blue = 0f
-                for (index in kernel.indices) {
-                    val px = if (pass == 0) x + index - radius else x
-                    val py = if (pass == 1) y + index - radius else y
-                    if (px !in 0 until width || py !in 0 until height) continue
-                    val color = input[py * width + px]
+                // Same samples and accumulation order; bounds and offsets are computed once per pixel.
+                val position = if (pass == 0) x else y
+                val first = max(0, radius - position)
+                val end = minOf(kernel.size, extent + radius - position)
+                var offset = y * width + x + (first - radius) * stride
+                for (index in first until end) {
+                    val color = input[offset]
+                    offset += stride
                     val weight = kernel[index]
                     alpha += (color ushr 24) * weight
                     red += (color ushr 16 and 255) * weight

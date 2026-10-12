@@ -6,7 +6,7 @@ This began as an older Android UI experiment. The 1.1.0 refresh turns both imple
 
 > **v1.2.0** includes the SwiftUI-calibrated animation and the real iOS/Android comparison below. Earlier `v1.1.0` artifacts retain the previous motion.
 >
-> **Unreleased rapid-input fix:** this checkout improves interrupted View/Compose animations and Compose glyph preparation. The published `v1.2.0` dependency below does **not** include this fix yet. Demo GIFs show v1.2.0's isolated transitions.
+> **Unreleased fixes and performance optimizations:** this checkout improves interrupted View/Compose animations, exact-layout reuse, View drawing/layout overhead and software blur preparation. The published `v1.2.0` dependency below does **not** include these changes yet. Demo GIFs show v1.2.0's isolated transitions.
 
 ## Demo
 
@@ -133,11 +133,13 @@ The implementation approximates those observed character, blur, phase and width 
 
 ### Performance boundaries
 
-The View reuses one animator, bounded per-character layer states and cached alpha-mask blur rasters. Compose uses an 8 MiB / 24-entry LRU and also retains the current layout's glyph working set, avoiding repeated eviction of unchanged large digits. New blur rasters crop transparent edges; cache hits do not rescan those edges or allocate temporary glyph bitmaps. Active transitions and the working set can retain evicted entries, so the LRU limit is not a total memory cap.
+The View reuses one animator, bounded per-character layer states and cached alpha-mask blur rasters. Target width is cached; fixed-width measurement skips animation-driven layout requests, while wrap-content remeasures only when the integer desired width changes. Sharp glyphs avoid identity canvas transforms. The eight blur levels and width interpolation remain unchanged.
 
-Compose shapes fonts and draws its typography/Brush snapshot on the UI thread; pixel extraction, cache lookup and missing blur generation run in one background preparation pipeline. Removing the component or changing its typography cancels obsolete work, including software Gaussian blur between rows. Prepared immutable layouts are published through Compose snapshot state without waiting for a return to the UI dispatcher.
+Compose uses an 8 MiB / 24-entry glyph LRU and retains the current layout's working set. A typography-scoped, 16-entry exact-number layout LRU skips shaping, bitmap snapshots and pixel-key generation on repeated values, including gradient/shadow layouts. Reused layouts receive fresh request timestamps and durations. Glyph eviction also removes dependent layouts, so this additional cache does not extend raster retention. Active transitions and the working set can retain evicted glyphs: the glyph LRU is not a total memory cap.
 
-This is **not a claim of optimal performance**. New values still require shaping, a bitmap snapshot and pixel-key allocation; gradient/shadow styles use more expensive software Gaussian blur. Cold starts, large fonts and many simultaneous components need workload-specific profiling. Android still does not promise pixel-identical SwiftUI spring or raster output.
+New Compose values still shape and draw a typography/Brush snapshot on the UI thread; pixel extraction and missing blur generation run in one background preparation pipeline. Removing the component or changing its typography cancels obsolete work. Software Gaussian blur precomputes valid sample ranges and strides without changing sample order, float accumulation or rounding. No sharp-text fallback replaces blur during an animation.
+
+This is **not a claim of globally optimal performance**. Unseen values still require raster preparation; gradient/shadow cold preparation remains expensive. Cold starts, large fonts and many simultaneous components need workload-specific profiling. Android does not promise pixel-identical SwiftUI spring or raster output.
 
 Historical **v1.2.0**, pre-fix API 34 emulator Debug profiling of the native comparison sequence reported 30.95% janky frames for View and 34.34% for Compose in an initial run. A later Compose run after the equal-width optimization reported 7/301 janky frames (2.33%), sampled UI work at approximately 1.95 ms p95, and a 70 ms UI outlier. Substantial buffer/GPU waiting and run-to-run variability prevent attributing that difference solely to the code change. These are whole-demo observations, not isolated component benchmarks, release-build measurements, measurements of this rapid-input fix or real-device guarantees.
 
@@ -180,8 +182,37 @@ The rapid scenarios compare actual numeric-area screenshots 300 ms after the fin
 
 Require a `PASS:` result; Android instrumentation can return a zero process exit code even on failure. Checks cover signed integer rendering, rollover measurement, interrupted-frame continuity, custom typography and alpha, unchanged leading-digit pixels during a carry, interrupted Compose gradient/shadow rendering versus immediate text, disabled animation, visibility/detachment, recreation and demo cancellation. Local verification uses API 34. CI is configured for an independent consumer build and enabled/disabled animation checks on API 26 and 35.
 
+For optimization fidelity, install the **original application APK** with the updated instrumentation APK and capture a baseline before installing the optimized application APK. Keep the same device, density, fonts and animation scale (`1`) for both runs; capturing the optimized version twice is not an original-version comparison.
+
+```sh
+adb shell am instrument -w -e showcase performance-baseline \
+  tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke
+# Install the optimized application APK without clearing application data.
+adb shell am instrument -w -e showcase performance-after \
+  tech.hezy.androidnumerictext.test/tech.hezy.androidnumerictext.NumericSmoke
+```
+
+The runner stores raw dimensions/ARGB, PNG View frames, float-bit transition metadata and p50/p95 timings under the application's external `numeric-proof/performance-{baseline,after}` directories. It compares 360 actual View draw frames and every Compose sharp/blur raster and transition snapshot, covering carries, growth/shrink, signs, integer boundaries, interrupted reversals, proportional italic/alpha typography, gradient/shadow and RTL. Compose intermediate-screen fidelity is **not** captured deterministically: its actual atlas pixels and transition inputs are compared, and existing live Compose carry and styled screenshot smoke checks exercise the unchanged Canvas renderer. Timings cover real preparation and software View drawing, not isolated GPU throughput or release-device frame-rate guarantees.
+
+Local API 34 emulator Debug verification compared **51,028,596 pixels**, 360 View frames and 4,032 frame/glyph rasters with **zero differences** in dimensions/ARGB and transition metadata at fixed phases. Original iOS recordings remain a visually fitted reference, not a cross-platform zero-error baseline. Preparation timing includes dispatch/reflection overhead; View drawing timing uses a software Canvas. No end-to-end jank-rate or global-optimality claim follows from these component measurements.
+
+Representative repeated A/B preparation measurements on the same isolated API 34 emulator (32 sp Compose styles, milliseconds, **p50**, 160 warm samples / 40 cold samples):
+
+| Actual preparation path | Original | Optimized |
+|---|---:|---:|
+| Repeated number, monospace | 3.893 | 0.0188 |
+| Repeated number, proportional italic / alpha | 4.210 | 0.0172 |
+| Repeated number, gradient / shadow | 3.361 | 0.0141 |
+| New atlas, gradient / shadow, LTR | 117.113 | 83.805 |
+| New atlas, gradient / shadow, RTL | 122.101 | 81.995 |
+
+Pure-color cold preparation did not show a consistent improvement (representative monospace p50: 1.850 → 1.965 ms); it still creates blur rasters. Software View drawing showed a much smaller p50 change (monospace: 12.50 → 11.79 µs), with variable tails across runs. These are component wall-clock observations, not frame-rate multipliers or guarantees for release builds and real devices.
+
 ## Unreleased changes
 
+- Reuse bounded exact-number Compose layouts without changing shaping, raster pixels or interrupted-update request timing.
+- Avoid redundant View width summation, fixed-width layout requests and identity drawing transforms.
+- Reduce software Gaussian sampling overhead while preserving all eight blur levels and exact accumulation order.
 - Preserve current glyph positions and phase during rapid updates and reversals; do not snap to an obsolete target.
 - Adapt continuous-update timing without restarting carry delays or discarding click input.
 - Keep the current Compose glyph working set, crop new blur rasters and move pixel/effect preparation off the UI thread.
