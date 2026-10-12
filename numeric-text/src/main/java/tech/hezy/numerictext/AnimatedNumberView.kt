@@ -57,6 +57,9 @@ class AnimatedNumberView @JvmOverloads constructor(
     private var blurPadding = 0f
     private var timelineScale = 1f
     private var startWidth = 0f
+    private var targetWidth = 0f
+    private var widthMeasureMode = -1
+    private var measuredDesiredWidth = 0
     private val targetCenters = FloatArray(11)
     private val columnDelays = FloatArray(11)
     // 最多 11 个字符位置 × 11 种字形；复用状态，不为连续点击积累动画队列。
@@ -89,7 +92,6 @@ class AnimatedNumberView @JvmOverloads constructor(
     }
 
     private fun currentTextWidth(): Float {
-        val targetWidth = textWidth(targetCharacters, targetLength)
         if (progress >= 1f) return targetWidth
         val fraction = NumericTextTransition.SnappyInterpolator.getInterpolation(progress * timelineScale)
         return startWidth + (targetWidth - startWidth) * fraction
@@ -128,11 +130,12 @@ class AnimatedNumberView @JvmOverloads constructor(
     private fun drawGlyph(canvas: Canvas, character: Char, x: Float, baseline: Float, visibility: Float) {
         val fade = visibility.coerceIn(0f, 1f)
         if (fade <= 0f) return
-        val saved = canvas.save()
-        if (character != '-') {
+        val saved = if (character != '-' && fade < 1f) {
+            val count = canvas.save()
             val scale = 0.4f + 0.6f * fade
             canvas.scale(scale, scale, x, baseline + (fontMetrics.ascent + fontMetrics.descent) / 2f)
-        }
+            count
+        } else -1
         val blur = ((1f - fade) * 8f).coerceIn(0f, 8f)
         val lower = blur.toInt()
         val blend = blur - lower
@@ -157,7 +160,7 @@ class AnimatedNumberView @JvmOverloads constructor(
                 canvas.drawBitmap(upper, x - digitWidth / 2f - blurPadding, baseline + fontMetrics.ascent - blurPadding, bitmapPaint)
             }
         }
-        canvas.restoreToCount(saved)
+        if (saved >= 0) canvas.restoreToCount(saved)
     }
 
     /** 最新目标整数，可直接通过 Java 的 getNumber() 读取。 */
@@ -214,12 +217,12 @@ class AnimatedNumberView @JvmOverloads constructor(
         addUpdateListener {
             progress = it.animatedValue as Float
             invalidate()
-            if (startWidth != textWidth(targetCharacters, targetLength)) requestLayout()
+            if (startWidth != targetWidth) requestWidthLayout()
         }
         addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
                 if (progress >= 1f) layers.clear()
-                requestLayout()
+                requestWidthLayout()
                 invalidate()
             }
         })
@@ -270,6 +273,7 @@ class AnimatedNumberView @JvmOverloads constructor(
         targetText = number.toString()
         targetLength = targetText.length
         for (index in 0 until targetLength) targetCharacters[index] = targetText[index]
+        targetWidth = textWidth(targetCharacters, targetLength)
         contentDescription = targetText
         val animate = hasNumber && animationDurationMillis > 0 && isAttachedToWindow &&
             isShown && windowVisibility == VISIBLE && NumericTextTransition.animationsEnabled(context)
@@ -286,7 +290,7 @@ class AnimatedNumberView @JvmOverloads constructor(
             progress = 1f
             layers.clear()
         }
-        requestLayout()
+        requestWidthLayout()
         invalidate()
     }
 
@@ -313,7 +317,7 @@ class AnimatedNumberView @JvmOverloads constructor(
                 changedIndex++ * stagger
             } else 0f
         }
-        var x = -textWidth(targetCharacters, targetLength) / 2f
+        var x = -targetWidth / 2f
         for (index in 0 until targetLength) {
             val advance = advances[glyphIndex(targetCharacters[index])]
             targetCenters[index] = x + advance / 2f
@@ -381,6 +385,7 @@ class AnimatedNumberView @JvmOverloads constructor(
         paint.textAlign = Paint.Align.CENTER
         paint.getFontMetrics(fontMetrics)
         lineHeight = fontMetrics.descent - fontMetrics.ascent
+        targetWidth = textWidth(targetCharacters, targetLength)
     }
 
     private fun settle() {
@@ -388,13 +393,26 @@ class AnimatedNumberView @JvmOverloads constructor(
         progress = 1f
         layers.clear()
         nextLayers.clear()
-        requestLayout()
+        requestWidthLayout()
         invalidate()
     }
 
+    private fun desiredWidth(): Int = max(
+        suggestedMinimumWidth,
+        ceil(currentTextWidth() + paint.textSize * 0.4f).toInt() + paddingLeft + paddingRight
+    )
+
+    private fun requestWidthLayout() {
+        if (widthMeasureMode != MeasureSpec.EXACTLY &&
+            (widthMeasureMode == -1 || desiredWidth() != measuredDesiredWidth)) {
+            requestLayout()
+        }
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val width = currentTextWidth()
-        val desiredWidth = max(suggestedMinimumWidth, ceil(width + paint.textSize * 0.4f).toInt() + paddingLeft + paddingRight)
+        val desiredWidth = desiredWidth()
+        widthMeasureMode = MeasureSpec.getMode(widthMeasureSpec)
+        measuredDesiredWidth = desiredWidth
         val desiredHeight = max(suggestedMinimumHeight, ceil(lineHeight + paint.textSize * 0.4f).toInt() + paddingTop + paddingBottom)
         setMeasuredDimension(
             resolveSizeAndState(desiredWidth, widthMeasureSpec, 0),
@@ -412,7 +430,7 @@ class AnimatedNumberView @JvmOverloads constructor(
         val baseline = paddingTop + (height - paddingTop - paddingBottom - lineHeight) / 2f - fontMetrics.ascent
         val centerX = paddingLeft + (width - paddingLeft - paddingRight) / 2f
         if (progress >= 1f) {
-            var x = centerX - textWidth(targetCharacters, targetLength) / 2f
+            var x = centerX - targetWidth / 2f
             for (index in 0 until targetLength) {
                 val advance = advances[glyphIndex(targetCharacters[index])]
                 canvas.drawText(targetCharacters, index, 1, x + advance / 2f, baseline, paint)
